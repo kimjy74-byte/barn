@@ -232,6 +232,73 @@ body {
   color: var(--ink-muted);
 }
 
+/* ★ 지도 검색 결과 드롭다운 */
+.map-search-results {
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-height: 260px;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+.map-search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-light);
+  transition: background 0.12s;
+}
+
+.map-search-result-item:last-child {
+  border-bottom: none;
+}
+
+.map-search-result-item:hover {
+  background: var(--green-bg);
+}
+
+.map-result-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1.5px solid #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.map-result-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.map-result-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-result-meta {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  margin-top: 1px;
+}
+
+.map-search-no-result {
+  padding: 16px;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
 /* 축종별 필터 칩 바 (가로 스크롤) */
 .breed-filter-bar {
   display: flex;
@@ -511,8 +578,16 @@ body {
 .farm-overlay.selected {
   transform: translate(-50%, -100%) scale(1.22);
   z-index: 10000 !important;
-  border-color: var(--ink);
-  box-shadow: 0 0 0 3px rgba(38, 35, 32, 0.3), 0 6px 20px rgba(0, 0, 0, 0.45);
+  border-color: var(--green);
+  background: #FFFDE7;
+  box-shadow: 0 0 0 3px rgba(79, 110, 72, 0.4), 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.farm-overlay-pin {
+  font-size: 0.8rem;
+  line-height: 1;
+  margin-right: 1px;
+  flex-shrink: 0;
 }
 
 .farm-overlay-dot {

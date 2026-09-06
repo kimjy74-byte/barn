@@ -42,7 +42,7 @@
             <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/>
             </svg>
-            <input type="text" id="map-search-input" placeholder="농가명으로 검색 (예: 새말, 하이얀)" autocomplete="off">
+            <input type="text" id="map-search-input" placeholder="농가명으로 검색 (예: 새말, 하이얼)" autocomplete="off">
             <button id="map-search-clear" class="search-clear" aria-label="검색어 지우기" style="display:none;">✕</button>
           </div>
           <button id="map-btn-mic" class="btn-mic" aria-label="음성 검색" title="음성으로 검색">
@@ -53,6 +53,8 @@
             </svg>
           </button>
         </div>
+        <!-- ★ 지도 검색 결과 드롭다운 -->
+        <div id="map-search-results" class="map-search-results" style="display:none;"></div>
 
         <!-- 축종별 필터 칩 바 (가로 스크롤) -->
         <div class="breed-filter-bar" id="breed-filter-bar">
