@@ -1163,8 +1163,6 @@ function openBottomSheet(id) {
       <span class="bs-info-value">${escapeHtml(addr)}</span>
       ${farm.면적 ? `<span class="bs-info-label">면적</span><span class="bs-info-value tabular-nums">${Number(farm.면적).toLocaleString()}㎡</span>` : ''}
       ${farm.허가일자 ? `<span class="bs-info-label">허가일자</span><span class="bs-info-value">${escapeHtml(farm.허가일자)}</span>` : ''}
-      ${farm.관리기관명 ? `<span class="bs-info-label">관리기관</span><span class="bs-info-value">${escapeHtml(farm.관리기관명)}</span>` : ''}
-      ${farm.관리부서전화번호 ? `<span class="bs-info-label">연락처</span><span class="bs-info-value"><a href="tel:${farm.관리부서전화번호}" style="color:var(--green); font-weight:500;">${escapeHtml(farm.관리부서전화번호)}</a></span>` : ''}
       ${farm.축산인허가번호 ? `<span class="bs-info-label">인허가번호</span><span class="bs-info-value">${escapeHtml(farm.축산인허가번호)}</span>` : ''}
       ${farm.데이터기준일자 ? `<span class="bs-info-label">데이터기준일</span><span class="bs-info-value">${escapeHtml(farm.데이터기준일자)}</span>` : ''}
     </div>
