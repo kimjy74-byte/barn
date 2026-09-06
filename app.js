@@ -222,15 +222,18 @@ function initMap() {
     clearMarkerSelection();
   });
 
+  // ★ 줌 변경 시 마커 가시성 업데이트
+  kakao.maps.event.addListener(kakaoMap, 'zoom_changed', () => {
+    updateOverlayVisibility();
+  });
+
+  // ★ 지도 이동(드래그) 완료 시에도 가시성 업데이트 (화면 밖 마커 숨김)
+  kakao.maps.event.addListener(kakaoMap, 'dragend', () => {
+    updateOverlayVisibility();
+  });
+
   // 농가 커스텀 오버레이 마커 렌더링
   renderMapMarkers();
-
-  // 3초 후 타일 로드 상태 체크
-  setTimeout(() => {
-    const imgs = container.querySelectorAll('img');
-    const canvases = container.querySelectorAll('canvas');
-    console.log('[축산길잡이] 타일 체크 — img:', imgs.length, 'canvas:', canvases.length, 'children:', container.children.length);
-  }, 3000);
 }
 
 // ─── 축종 분류 및 색상 함수 ───
@@ -249,6 +252,19 @@ function getBreedCategory(breed) {
 function getBreedColor(breed) {
   const category = getBreedCategory(breed);
   return BREED_COLORS[category] || BREED_COLORS['기타'];
+}
+
+// ─── 줌 레벨별 표시 전략 ───
+// 카카오맵 level: 숫자가 클수록 축소, 작을수록 확대
+// level 1~4: 매우 확대 → 화면 내 전체 표시 (이름 O)
+// level 5~6: 중간 확대 → 화면 내 상위 50개 (이름 O)
+// level 7~8: 축소      → 화면 내 상위 25개 (이름 숨김, 점만)
+// level 9+:  매우 축소  → 화면 내 상위 15개 (이름 숨김, 점만)
+function getZoomConfig(level) {
+  if (level <= 4) return { maxShow: Infinity, showName: true };
+  if (level <= 6) return { maxShow: 50, showName: true };
+  if (level <= 8) return { maxShow: 25, showName: false };
+  return { maxShow: 15, showName: false };
 }
 
 // ─── 지도 커스텀 오버레이 마커 렌더링 ───
@@ -276,12 +292,13 @@ function renderMapMarkers() {
 
     const breed = farm.주사육업종 || '기타';
     const color = getBreedColor(breed);
+    const headCount = parseInt(farm.사육두수) || 0;
 
     // 커스텀 오버레이 DOM 생성: 동그라미 색상 점 + 농가명 텍스트
     const content = document.createElement('div');
     content.className = 'farm-overlay';
     content.id = `farm-overlay-${farm._id}`;
-    content.title = `${farm.사업장명} (${breed})`;
+    content.title = `${farm.사업장명} (${breed}) — ${headCount.toLocaleString()}두`;
 
     if (selectedFarmId === farm._id) {
       content.classList.add('selected');
@@ -305,8 +322,16 @@ function renderMapMarkers() {
       zIndex: 10
     });
 
-    overlay.setMap(kakaoMap);
-    kakaoOverlays.push({ id: farm._id, overlay: overlay, latLng: latLng, farm: farm });
+    // ★ 지도에 바로 올리지 않음 — updateOverlayVisibility()가 제어
+    kakaoOverlays.push({
+      id: farm._id,
+      overlay: overlay,
+      latLng: latLng,
+      farm: farm,
+      headCount: headCount,
+      contentEl: content,
+      visible: false
+    });
   });
 
   // 상태 배너 업데이트
@@ -316,6 +341,78 @@ function renderMapMarkers() {
   if ((currentSearchQuery || currentBreedFilter !== 'ALL') && hasValidCoords && validFarms.length > 0) {
     kakaoMap.setBounds(bounds);
   }
+
+  // ★ 현재 줌 레벨에 맞춰 마커 표시
+  updateOverlayVisibility();
+}
+
+// ─── 줌 레벨에 따른 마커 가시성 업데이트 ───
+function updateOverlayVisibility() {
+  if (!kakaoMap || kakaoOverlays.length === 0) return;
+
+  const level = kakaoMap.getLevel();
+  const config = getZoomConfig(level);
+  const mapBounds = kakaoMap.getBounds();
+
+  // 1) 현재 화면(bounds) 안에 있는 오버레이만 필터
+  const inBounds = [];
+  const outBounds = [];
+
+  kakaoOverlays.forEach(item => {
+    if (mapBounds.contain(item.latLng)) {
+      inBounds.push(item);
+    } else {
+      outBounds.push(item);
+    }
+  });
+
+  // 2) 화면 밖 오버레이는 모두 숨김
+  outBounds.forEach(item => {
+    if (item.visible) {
+      item.overlay.setMap(null);
+      item.visible = false;
+    }
+  });
+
+  // 3) 화면 안 오버레이를 사육두수 내림차순 정렬
+  inBounds.sort((a, b) => b.headCount - a.headCount);
+
+  // 4) 상위 N개만 표시, 나머지 숨김
+  inBounds.forEach((item, index) => {
+    const shouldShow = index < config.maxShow || item.id === selectedFarmId;
+
+    if (shouldShow) {
+      // 이름 표시/숨김 제어
+      const nameEl = item.contentEl.querySelector('.farm-overlay-name');
+      if (nameEl) {
+        nameEl.style.display = config.showName ? '' : 'none';
+      }
+
+      // 이름 숨길 때 점 크기 약간 키움
+      const dotEl = item.contentEl.querySelector('.farm-overlay-dot');
+      if (dotEl) {
+        if (!config.showName) {
+          dotEl.style.width = '14px';
+          dotEl.style.height = '14px';
+          item.contentEl.style.padding = '4px';
+        } else {
+          dotEl.style.width = '';
+          dotEl.style.height = '';
+          item.contentEl.style.padding = '';
+        }
+      }
+
+      if (!item.visible) {
+        item.overlay.setMap(kakaoMap);
+        item.visible = true;
+      }
+    } else {
+      if (item.visible) {
+        item.overlay.setMap(null);
+        item.visible = false;
+      }
+    }
+  });
 }
 
 function clearMarkerSelection() {

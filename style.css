@@ -65,12 +65,19 @@ body {
 }
 
 #app {
-  max-width: 480px;
+  max-width: 100%;
   margin: 0 auto;
   min-height: 100dvh;
   position: relative;
   display: flex;
   flex-direction: column;
+}
+
+/* 모바일 소형 화면에서만 폭 제한 */
+@media (max-width: 600px) {
+  #app {
+    max-width: 480px;
+  }
 }
 
 /* ─── 타이포 유틸 ─── */
