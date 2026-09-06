@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="축산 농가 검색 및 카카오맵 내비게이션 안내 모바일 웹앱">
+  <title>축산길잡이 — 농가 검색 · 길안내</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- ═══ 헤더 ═══ -->
+    <header id="header">
+      <h1 class="app-title">축산길잡이</h1>
+      <p class="app-subtitle">농가 검색 · 길안내</p>
+    </header>
+
+    <!-- ═══ 검색 탭 ═══ -->
+    <section id="tab-search" class="tab-panel active">
+      <!-- 검색 바 -->
+      <div class="search-bar">
+        <div class="search-input-wrap">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/>
+          </svg>
+          <input type="text" id="search-input" placeholder="사업장명 검색…" autocomplete="off" inputmode="search">
+          <button id="search-clear" class="search-clear" aria-label="검색어 지우기" style="display:none;">✕</button>
+        </div>
+        <button id="btn-mic" class="btn-mic" aria-label="음성 검색" title="음성으로 검색">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
+            <path d="M19 11a7 7 0 0 1-14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- 검색 상태 안내 -->
+      <div id="search-status" class="search-status"></div>
+
+      <!-- 검색 결과 목록 -->
+      <ul id="farm-list" class="farm-list"></ul>
+
+      <!-- 검색 결과 없음 -->
+      <div id="empty-search" class="empty-state" style="display:none;">
+        <p class="empty-icon">🔍</p>
+        <p class="empty-text">일치하는 사업장명이 없습니다</p>
+        <button class="btn-link" onclick="switchTab('register')">→ 등록 화면으로 이동</button>
+      </div>
+
+      <!-- 데이터 없음 -->
+      <div id="no-data" class="empty-state" style="display:none;">
+        <p class="empty-icon">📋</p>
+        <p class="empty-text">등록된 농가 데이터가 없습니다</p>
+        <button class="btn-link" onclick="switchTab('register')">→ 데이터 등록하기</button>
+      </div>
+    </section>
+
+    <!-- ═══ 등록 탭 ═══ -->
+    <section id="tab-register" class="tab-panel">
+      <!-- CSV 업로드 -->
+      <div class="register-section">
+        <h2 class="section-title">CSV 파일 업로드</h2>
+        <p class="section-desc">CSV 파일을 업로드하면 기존 데이터가 모두 교체됩니다.</p>
+        <label class="csv-upload-area" id="csv-upload-area">
+          <input type="file" id="csv-file-input" accept=".csv,text/csv" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="upload-icon">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="12" y1="18" x2="12" y2="12"/>
+            <polyline points="9 15 12 12 15 15"/>
+          </svg>
+          <span>CSV 파일 선택 또는 여기에 끌어다 놓기</span>
+        </label>
+      </div>
+
+      <hr class="section-divider">
+
+      <!-- 개별 등록/수정 폼 -->
+      <div class="register-section">
+        <h2 class="section-title" id="form-title">개별 농가 등록</h2>
+        <form id="farm-form" class="farm-form" autocomplete="off">
+          <input type="hidden" id="form-edit-id" value="">
+          <div class="form-row">
+            <label class="form-label required" for="f-name">사업장명</label>
+            <input type="text" id="f-name" class="form-input" required>
+          </div>
+          <div class="form-row-double">
+            <div class="form-row">
+              <label class="form-label required" for="f-lat">위도</label>
+              <input type="number" id="f-lat" class="form-input" step="any" required placeholder="37.xxxxx">
+            </div>
+            <div class="form-row">
+              <label class="form-label required" for="f-lng">경도</label>
+              <input type="number" id="f-lng" class="form-input" step="any" required placeholder="126.xxxxx">
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="f-license">축산인허가번호</label>
+            <input type="text" id="f-license" class="form-input">
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="f-road-addr">소재지도로</label>
+            <input type="text" id="f-road-addr" class="form-input">
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="f-jibun-addr">소재지지번주소</label>
+            <input type="text" id="f-jibun-addr" class="form-input">
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="f-area">면적 (㎡)</label>
+            <input type="number" id="f-area" class="form-input" step="any">
+          </div>
+          <div class="form-row-double">
+            <div class="form-row">
+              <label class="form-label" for="f-type">주사육업종</label>
+              <input type="text" id="f-type" class="form-input" placeholder="예: 젖소, 육계">
+            </div>
+            <div class="form-row">
+              <label class="form-label" for="f-count">사육두수</label>
+              <input type="number" id="f-count" class="form-input" min="0">
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="f-permit-date">허가일자</label>
+            <input type="date" id="f-permit-date" class="form-input">
+          </div>
+          <div class="form-row-double">
+            <div class="form-row">
+              <label class="form-label" for="f-agency">관리기관명</label>
+              <input type="text" id="f-agency" class="form-input">
+            </div>
+            <div class="form-row">
+              <label class="form-label" for="f-phone">관리부서전화번호</label>
+              <input type="tel" id="f-phone" class="form-input">
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="f-data-date">데이터기준일자</label>
+            <input type="date" id="f-data-date" class="form-input">
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary" id="form-submit-btn">등록</button>
+            <button type="button" class="btn-secondary" id="form-cancel-btn" style="display:none;" onclick="resetForm()">취소</button>
+          </div>
+        </form>
+      </div>
+
+      <hr class="section-divider">
+
+      <!-- 등록된 농가 관리 목록 -->
+      <div class="register-section">
+        <h2 class="section-title">등록 농가 관리 <span id="manage-count" class="count-badge">0</span></h2>
+        <ul id="manage-list" class="manage-list"></ul>
+        <div id="manage-empty" class="empty-state">
+          <p class="empty-text">등록된 농가가 없습니다</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 하단 탭바 ═══ -->
+    <nav id="tab-bar" class="tab-bar">
+      <button class="tab-item active" data-tab="search" onclick="switchTab('search')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/>
+        </svg>
+        <span>검색</span>
+      </button>
+      <button class="tab-item" data-tab="register" onclick="switchTab('register')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <polyline points="9 15 12 12 15 15"/>
+        </svg>
+        <span>등록</span>
+      </button>
+    </nav>
+
+    <!-- ═══ 바텀시트 ═══ -->
+    <div id="bottomsheet-overlay" class="bottomsheet-overlay" onclick="closeBottomSheet()"></div>
+    <div id="bottomsheet" class="bottomsheet">
+      <div class="bottomsheet-handle" onclick="closeBottomSheet()"><span></span></div>
+      <div id="bottomsheet-content" class="bottomsheet-content"></div>
+    </div>
+
+    <!-- ═══ 토스트 ═══ -->
+    <div id="toast" class="toast"></div>
+
+    <!-- ═══ 확인 대화상자 ═══ -->
+    <div id="confirm-overlay" class="confirm-overlay" style="display:none;">
+      <div class="confirm-dialog">
+        <p id="confirm-msg" class="confirm-msg"></p>
+        <div class="confirm-actions">
+          <button id="confirm-cancel" class="btn-secondary">취소</button>
+          <button id="confirm-ok" class="btn-primary btn-danger">확인</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
