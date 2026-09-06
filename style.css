@@ -70,18 +70,16 @@ body {
 
 /* ═══ 헤더 ═══ */
 #header {
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  position: relative;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
-  padding: 8px 16px;
+  padding: 10px 16px;
   text-align: center;
-  height: var(--header-height);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  z-index: 10;
 }
 
 .app-title {
@@ -101,12 +99,12 @@ body {
 /* ═══ 검색 바 ═══ */
 .search-bar {
   position: sticky;
-  top: var(--header-height);
-  z-index: 99;
+  top: 0;
+  z-index: 50;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 10px 16px;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
@@ -198,9 +196,10 @@ body {
 
 /* ─── 검색 상태 ─── */
 .search-status {
-  padding: 6px 16px;
+  padding: 8px 16px;
   font-size: 0.8125rem;
   color: var(--ink-muted);
+  background: var(--bg);
   border-bottom: 1px solid var(--border-light);
   min-height: 28px;
   display: flex;

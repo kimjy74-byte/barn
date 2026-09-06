@@ -49,13 +49,14 @@ document.addEventListener('DOMContentLoaded', () => {
   renderManageList();
 });
 
-// ═══ 데이터 관리 ═══
+// ─── 데이터 관리 ═══
 function loadData() {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored) {
     try {
       farms = JSON.parse(stored);
-      if (!Array.isArray(farms) || farms.length === 0) {
+      // 기존에 4개짜리 옛날 데이터가 캐싱되어 있다면 전체 552개 데이터로 자동 교체
+      if (!Array.isArray(farms) || farms.length < 50) {
         farms = [...DEFAULT_FARMS];
         saveData();
       }
