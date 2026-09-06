@@ -1210,6 +1210,25 @@ body {
   background: var(--bg-elevated);
 }
 
+.bs-btn.speaking {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #f87171;
+  animation: pulse-speaking 1.5s infinite;
+}
+
+@keyframes pulse-speaking {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(220, 38, 38, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+}
+
 /* 카카오내비 길안내 버튼: 카카오 노란색 브랜드 컬러 테마 */
 .bs-btn-navi {
   background: #FEE500;

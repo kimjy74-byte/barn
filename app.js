@@ -1109,13 +1109,149 @@ function initVoice() {
 }
 
 // ═══ TTS (Web Speech Synthesis) ═══
+let currentUtterance = null;
+let koreanVoice = null;
+let isSpeakingAnnouncement = false;
+let currentAnnouncementText = '';
+
+function loadVoices() {
+  if (!('speechSynthesis' in window)) return;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices || voices.length === 0) return;
+
+  // 한국어 음성 우선 매칭 (ko-KR, ko_KR, ko, 또는 Korean)
+  koreanVoice = voices.find(v => v.lang === 'ko-KR' || v.lang === 'ko_KR') ||
+                voices.find(v => v.lang && v.lang.toLowerCase().startsWith('ko')) ||
+                voices.find(v => v.name && (v.name.includes('Korean') || v.name.includes('한국어'))) ||
+                null;
+}
+
+if ('speechSynthesis' in window) {
+  loadVoices();
+  if (typeof window.speechSynthesis.onvoiceschanged !== 'undefined') {
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }
+}
+
+function updateSpeechButtonUI(isSpeaking) {
+  const btn = document.getElementById('btn-speak-announcement');
+  if (!btn) return;
+  if (isSpeaking) {
+    btn.classList.add('speaking');
+    btn.innerHTML = '⏹ 음성 멈추기';
+    btn.setAttribute('title', '음성 안내 중지');
+  } else {
+    btn.classList.remove('speaking');
+    btn.innerHTML = '🔊 음성으로 듣기';
+    btn.setAttribute('title', '농장 상세 안내 음성 듣기');
+  }
+}
+
+function stopSpeaking() {
+  if ('speechSynthesis' in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (e) {
+      console.warn('speechSynthesis.cancel 에러:', e);
+    }
+  }
+  isSpeakingAnnouncement = false;
+  currentUtterance = null;
+  window._currentUtterance = null;
+  updateSpeechButtonUI(false);
+}
+window.stopSpeaking = stopSpeaking;
+
+function toggleAnnouncementSpeech(text) {
+  const targetText = (text || currentAnnouncementText || '').trim();
+
+  // 이미 음성이 재생 중이면 정지
+  if (isSpeakingAnnouncement || (window.speechSynthesis && window.speechSynthesis.speaking)) {
+    stopSpeaking();
+    showToast('음성 안내를 멈췄습니다.', 2000);
+    return;
+  }
+
+  speakText(targetText);
+}
+window.toggleAnnouncementSpeech = toggleAnnouncementSpeech;
+
 function speakText(text) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'ko-KR';
-  utterance.rate = 1;
-  window.speechSynthesis.speak(utterance);
+  if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
+    showToast('현재 브라우저에서는 음성 안내(TTS) 기능을 지원하지 않습니다.', 3000);
+    return;
+  }
+
+  const cleanText = (text || '').trim();
+  if (!cleanText) {
+    showToast('안내할 텍스트 내용이 없습니다.', 2000);
+    return;
+  }
+
+  // 기존 음성 합성 취소
+  try {
+    window.speechSynthesis.cancel();
+  } catch (e) {
+    console.warn('cancel 에러:', e);
+  }
+
+  // Chromium 버그 방지: cancel 직후 speak 호출 시 함께 취소되는 현상 방지를 위해 짧은 비동기 지연 실행
+  setTimeout(() => {
+    try {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
+      if (!koreanVoice) {
+        loadVoices();
+      }
+
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = 'ko-KR';
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
+
+      if (koreanVoice) {
+        utterance.voice = koreanVoice;
+      }
+
+      utterance.onstart = () => {
+        isSpeakingAnnouncement = true;
+        updateSpeechButtonUI(true);
+        showToast('🔊 농장 안내 음성을 재생합니다.', 2500);
+      };
+
+      utterance.onend = () => {
+        isSpeakingAnnouncement = false;
+        currentUtterance = null;
+        window._currentUtterance = null;
+        updateSpeechButtonUI(false);
+      };
+
+      utterance.onerror = (e) => {
+        isSpeakingAnnouncement = false;
+        currentUtterance = null;
+        window._currentUtterance = null;
+        updateSpeechButtonUI(false);
+
+        // 사용자의 의도적 정지/취소(interrupted or canceled)인 경우 에러 메시지 생략
+        if (e.error && e.error !== 'interrupted' && e.error !== 'canceled') {
+          console.warn('TTS 재생 오류:', e);
+          showToast('음성 재생 중 오류가 발생했습니다: ' + e.error, 3000);
+        }
+      };
+
+      // Chromium 가비지 컬렉션(GC) 조기 수거 방지를 위해 전역 참조 유지
+      currentUtterance = utterance;
+      window._currentUtterance = utterance;
+
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.error('TTS 실행 예외:', err);
+      showToast('음성 재생 실행 중 오류가 발생했습니다.', 3000);
+      stopSpeaking();
+    }
+  }, 70);
 }
 window.speakText = speakText;
 
@@ -1123,6 +1259,9 @@ window.speakText = speakText;
 function openBottomSheet(id) {
   const farm = farms.find(f => f._id === id);
   if (!farm) return;
+
+  // 이전 재생 중이던 음성이 있다면 정지
+  stopSpeaking();
 
   const breed = farm.주사육업종 || '기타';
   const tag = breed.charAt(0);
@@ -1132,6 +1271,7 @@ function openBottomSheet(id) {
   const addr = farm.소재지도로 || farm.소재지지번주소 || '주소 없음';
   const nearby = findNearbyFarms(farm, 1);
   const announcementText = buildAnnouncementText(farm);
+  currentAnnouncementText = announcementText;
 
   let nearbyHtml;
   if (nearby.length === 0) {
@@ -1174,7 +1314,7 @@ function openBottomSheet(id) {
     <div class="bs-announce">${escapeHtml(announcementText)}</div>
 
     <div class="bs-actions">
-      <button class="bs-btn" onclick="speakText(document.querySelector('.bs-announce').textContent)">
+      <button id="btn-speak-announcement" class="bs-btn" onclick="toggleAnnouncementSpeech()">
         🔊 음성으로 듣기
       </button>
       <button class="bs-btn bs-btn-navi" onclick="openKakaoNavi(farms.find(f=>f._id==='${farm._id}'))">
@@ -1193,6 +1333,7 @@ function openBottomSheet(id) {
 window.openBottomSheet = openBottomSheet;
 
 function closeBottomSheet() {
+  stopSpeaking();
   document.getElementById('bottomsheet-overlay').classList.remove('open');
   document.getElementById('bottomsheet').classList.remove('open');
   document.body.style.overflow = '';
