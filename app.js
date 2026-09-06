@@ -62,6 +62,7 @@ let myLocationMarker = null;
 
 // ═══ 초기화 ═══
 document.addEventListener('DOMContentLoaded', () => {
+  initInAppBrowserNotice();
   loadData();
   initGeolocation();
   initKakaoSDK();
@@ -1108,8 +1109,39 @@ function initVoice() {
   if (listBtnMic) listBtnMic.addEventListener('click', handleMicClick);
 }
 
-// ═══ TTS (Web Speech Synthesis) ═══
+// ═══ 모바일 및 카카오톡 인앱 브라우저 감지 ═══
+const isKakaoTalk = /KAKAOTALK/i.test(navigator.userAgent);
+const isInAppBrowser = /KAKAOTALK|NAVER|Line|Instagram|FB_IAB|FB4A|FBAN/i.test(navigator.userAgent);
+const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+// 카카오톡 등 인앱 브라우저에서 외부 브라우저(Chrome/Safari)로 열기
+function openInExternalBrowser(targetUrl) {
+  const url = targetUrl || window.location.href;
+  if (/Android/i.test(navigator.userAgent)) {
+    // 안드로이드: 크롬 인텐트 우선 시도 후 카카오 스킴 백업
+    const schemeUrl = url.replace(/^https?:\/\//i, '');
+    window.location.href = `intent://${schemeUrl}#Intent;scheme=https;package=com.android.chrome;end`;
+    setTimeout(() => {
+      window.location.href = `kakaotalk://web/openExternal?url=${encodeURIComponent(url)}`;
+    }, 400);
+  } else {
+    // iOS (아이폰/아이패드)
+    window.location.href = `kakaotalk://web/openExternal?url=${encodeURIComponent(url)}`;
+  }
+}
+window.openInExternalBrowser = openInExternalBrowser;
+
+function initInAppBrowserNotice() {
+  const notice = document.getElementById('inapp-notice');
+  if (isKakaoTalk || isInAppBrowser) {
+    if (notice) notice.style.display = 'flex';
+  }
+}
+window.initInAppBrowserNotice = initInAppBrowserNotice;
+
+// ═══ TTS 엔진 (Web Speech Synthesis + 모바일 Audio Fallback 하이브리드) ═══
 let currentUtterance = null;
+let currentAudioPlayer = null;
 let koreanVoice = null;
 let isSpeakingAnnouncement = false;
 let currentAnnouncementText = '';
@@ -1147,7 +1179,9 @@ function updateSpeechButtonUI(isSpeaking) {
   }
 }
 
+// 음성 전체 정지 (Web Speech API 및 모바일 Audio 둘 다 중지)
 function stopSpeaking() {
+  // 1. Web Speech API 중지
   if ('speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
@@ -1155,6 +1189,17 @@ function stopSpeaking() {
       console.warn('speechSynthesis.cancel 에러:', e);
     }
   }
+
+  // 2. Audio Fallback 플레이어 중지
+  if (currentAudioPlayer) {
+    try {
+      currentAudioPlayer.pause();
+      currentAudioPlayer.currentTime = 0;
+      currentAudioPlayer.src = '';
+    } catch (e) {}
+    currentAudioPlayer = null;
+  }
+
   isSpeakingAnnouncement = false;
   currentUtterance = null;
   window._currentUtterance = null;
@@ -1176,15 +1221,104 @@ function toggleAnnouncementSpeech(text) {
 }
 window.toggleAnnouncementSpeech = toggleAnnouncementSpeech;
 
-function speakText(text) {
-  if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
-    showToast('현재 브라우저에서는 음성 안내(TTS) 기능을 지원하지 않습니다.', 3000);
-    return;
+// 텍스트를 오디오 재생에 알맞게 문장/쉼표 단위(최대 70자)로 분할
+function splitTextIntoChunks(text, maxLen = 70) {
+  const rawParts = text.replace(/([.?!])\s+/g, '$1|').split('|');
+  const chunks = [];
+  for (let part of rawParts) {
+    part = part.trim();
+    if (!part) continue;
+    if (part.length <= maxLen) {
+      chunks.push(part);
+    } else {
+      const subParts = part.split(/,\s*/);
+      let temp = '';
+      for (let sub of subParts) {
+        if ((temp + ', ' + sub).length <= maxLen) {
+          temp = temp ? temp + ', ' + sub : sub;
+        } else {
+          if (temp) chunks.push(temp);
+          temp = sub;
+        }
+      }
+      if (temp) chunks.push(temp);
+    }
+  }
+  return chunks.length ? chunks : [text.substring(0, maxLen)];
+}
+
+// 모바일 웹뷰(카카오톡 등) 및 Web Speech 미지원 환경용 Audio Fallback 스트리밍 재생
+function playAudioFallback(text) {
+  stopSpeaking();
+
+  const chunks = splitTextIntoChunks(text);
+  if (!chunks.length) return;
+
+  isSpeakingAnnouncement = true;
+  updateSpeechButtonUI(true);
+  showToast('🔊 모바일 오디오로 안내 음성을 재생합니다.', 2500);
+
+  let chunkIndex = 0;
+
+  function playNextChunk() {
+    if (!isSpeakingAnnouncement || chunkIndex >= chunks.length) {
+      stopSpeaking();
+      return;
+    }
+
+    const currentChunk = chunks[chunkIndex];
+    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=ko&client=tw-ob&q=${encodeURIComponent(currentChunk)}`;
+
+    currentAudioPlayer = new Audio(ttsUrl);
+
+    currentAudioPlayer.onended = () => {
+      chunkIndex++;
+      playNextChunk();
+    };
+
+    currentAudioPlayer.onerror = (e) => {
+      console.warn('Audio fallback 에러:', e);
+      chunkIndex++;
+      if (chunkIndex < chunks.length) {
+        playNextChunk();
+      } else {
+        stopSpeaking();
+        if (isInAppBrowser) {
+          showToast('인앱 브라우저에서 오디오가 제한되었습니다. 상단 [기본 브라우저로 열기]를 눌러주세요.', 4000);
+        }
+      }
+    };
+
+    const playPromise = currentAudioPlayer.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(err => {
+        console.warn('Audio play catch:', err);
+        stopSpeaking();
+        if (isInAppBrowser) {
+          showToast('인앱 브라우저 오디오 제한: 상단 [기본 브라우저로 열기]를 이용해 주세요.', 4500);
+        } else {
+          showToast('음성을 재생하려면 화면을 터치해 주세요.', 3000);
+        }
+      });
+    }
   }
 
+  playNextChunk();
+}
+
+// 메인 TTS 발화 함수: Web Speech API 우선 사용, 불가 시 Audio Fallback으로 100% 재생 보장
+function speakText(text) {
   const cleanText = (text || '').trim();
   if (!cleanText) {
     showToast('안내할 텍스트 내용이 없습니다.', 2000);
+    return;
+  }
+
+  const hasWebSpeech = ('speechSynthesis' in window) && (typeof SpeechSynthesisUtterance !== 'undefined');
+
+  // 카카오톡/인앱 브라우저 환경이거나 Web Speech API가 없으면 Audio Fallback 즉시 실행!
+  if (!hasWebSpeech || isInAppBrowser) {
+    playAudioFallback(cleanText);
     return;
   }
 
@@ -1195,8 +1329,7 @@ function speakText(text) {
     console.warn('cancel 에러:', e);
   }
 
-  // Chromium 버그 방지: cancel 직후 speak 호출 시 함께 취소되는 현상 방지를 위해 짧은 비동기 지연 실행
-  setTimeout(() => {
+  const runWebSpeech = () => {
     try {
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
@@ -1229,29 +1362,35 @@ function speakText(text) {
       };
 
       utterance.onerror = (e) => {
-        isSpeakingAnnouncement = false;
-        currentUtterance = null;
-        window._currentUtterance = null;
-        updateSpeechButtonUI(false);
-
-        // 사용자의 의도적 정지/취소(interrupted or canceled)인 경우 에러 메시지 생략
-        if (e.error && e.error !== 'interrupted' && e.error !== 'canceled') {
-          console.warn('TTS 재생 오류:', e);
-          showToast('음성 재생 중 오류가 발생했습니다: ' + e.error, 3000);
+        if (e.error === 'interrupted' || e.error === 'canceled') {
+          isSpeakingAnnouncement = false;
+          currentUtterance = null;
+          window._currentUtterance = null;
+          updateSpeechButtonUI(false);
+          return;
         }
+
+        console.warn('Web Speech 오류 발생, Audio 폴백으로 자동 전환:', e);
+        playAudioFallback(cleanText);
       };
 
-      // Chromium 가비지 컬렉션(GC) 조기 수거 방지를 위해 전역 참조 유지
       currentUtterance = utterance;
       window._currentUtterance = utterance;
 
       window.speechSynthesis.speak(utterance);
     } catch (err) {
-      console.error('TTS 실행 예외:', err);
-      showToast('음성 재생 실행 중 오류가 발생했습니다.', 3000);
-      stopSpeaking();
+      console.warn('Web Speech 실행 예외, Audio 폴백 전환:', err);
+      playAudioFallback(cleanText);
     }
-  }, 70);
+  };
+
+  // 모바일 일반 브라우저에서는 사용자 제스처 유지를 위해 동기 즉시 실행
+  if (isMobileDevice) {
+    runWebSpeech();
+  } else {
+    // PC Chromium 계열 버그 방지용 짧은 비동기 지연
+    setTimeout(runWebSpeech, 70);
+  }
 }
 window.speakText = speakText;
 
