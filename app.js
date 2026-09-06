@@ -122,9 +122,35 @@ function loadKakaoMapSdk(appKey) {
   };
 
   script.onerror = () => {
-    showToast('카카오 지도 SDK 로드 실패. API 키 또는 도메인 설정을 확인해 주세요.', 4000);
+    let errorMsg = '카카오 지도 SDK 로드 실패: ';
+    if (window.location.protocol === 'file:') {
+      errorMsg += '파일을 직접 열면(file://) 카카오 지도가 차단됩니다. Live Server 등 로컬 서버(http://localhost)로 열어주세요.';
+    } else {
+      errorMsg += `카카오 콘솔 [플랫폼 > Web]에 현재 접속 주소(${window.location.origin})가 등록되어 있는지 확인해 주세요.`;
+    }
+    showToast(errorMsg, 6000);
     const keyPrompt = document.getElementById('map-key-prompt');
-    if (keyPrompt) keyPrompt.style.display = 'flex';
+    if (keyPrompt) {
+      keyPrompt.style.display = 'flex';
+      const promptCard = keyPrompt.querySelector('.map-prompt-card');
+      if (promptCard) {
+        promptCard.innerHTML = `
+          <div class="prompt-icon">⚠️</div>
+          <h3>카카오 지도 연동 확인 필요</h3>
+          <div style="text-align:left; font-size:0.8125rem; color:var(--ink-light); line-height:1.6; margin-bottom:16px;">
+            ${window.location.protocol === 'file:' ? '<p style="color:var(--red); font-weight:600; margin-bottom:8px;">⚠️ 현재 file:// 로 실행 중입니다.<br>카카오는 보안상 file://을 차단하므로 Live Server(http://localhost:5500 등)로 열어야 합니다.</p>' : ''}
+            <p><strong>1. JavaScript 키가 맞는지 확인</strong><br>REST API 키가 아닌 <strong>JavaScript 키</strong>여야 합니다.</p>
+            <p style="margin-top:6px;"><strong>2. Web 사이트 도메인 등록 확인</strong><br>카카오 디벨로퍼스 &gt; 앱 &gt; [플랫폼] &gt; [Web]에 <strong>${window.location.origin}</strong>을 등록해 주세요.</p>
+          </div>
+          <div class="prompt-actions">
+            <button class="btn-primary" onclick="openKeyModal()">키 다시 입력 / 설정</button>
+          </div>
+          <p class="prompt-guide-text" style="margin-top:10px;">
+            <a href="https://developers.kakao.com" target="_blank" rel="noopener">카카오 디벨로퍼스 바로가기</a>
+          </p>
+        `;
+      }
+    }
   };
 
   document.head.appendChild(script);
@@ -189,6 +215,14 @@ function initMap() {
   };
 
   kakaoMap = new kakao.maps.Map(container, options);
+
+  // 컨테이너 크기 반영을 위한 강제 리레이아웃
+  setTimeout(() => {
+    if (kakaoMap) {
+      kakaoMap.relayout();
+      kakaoMap.setCenter(defaultCenter);
+    }
+  }, 100);
 
   // 일반 지도와 스카이뷰 컨트롤 추가 (선택사항)
   const mapTypeControl = new kakao.maps.MapTypeControl();

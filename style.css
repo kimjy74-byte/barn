@@ -475,35 +475,35 @@ body {
 
 /* ═══ 카카오 커스텀 오버레이 마커 스타일 ═══ */
 .farm-overlay {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 7px 3px 4px;
-  background: rgba(255, 255, 255, 0.95);
+  padding: 3px 8px 3px 5px;
+  background: #ffffff;
   border-radius: 14px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
-  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  border: 1.5px solid rgba(0, 0, 0, 0.15);
   white-space: nowrap;
   user-select: none;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, z-index 0.12s;
+  cursor: pointer;
+  transform: translate(-50%, -100%);
+  margin-top: -6px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 .farm-overlay:hover,
 .farm-overlay:active {
-  transform: translate(-50%, -50%) scale(1.12);
-  z-index: 1000 !important;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  background: #ffffff;
+  transform: translate(-50%, -100%) scale(1.15);
+  z-index: 9999 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  border-color: var(--ink);
 }
 
 .farm-overlay.selected {
-  transform: translate(-50%, -50%) scale(1.2);
-  z-index: 1100 !important;
+  transform: translate(-50%, -100%) scale(1.22);
+  z-index: 10000 !important;
   border-color: var(--ink);
-  box-shadow: 0 0 0 3px rgba(38, 35, 32, 0.25), 0 6px 18px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 3px rgba(38, 35, 32, 0.3), 0 6px 20px rgba(0, 0, 0, 0.45);
 }
 
 .farm-overlay-dot {
