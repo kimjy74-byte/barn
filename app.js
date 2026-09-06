@@ -37,10 +37,12 @@ let currentTab = 'search';
 let toastTimer = null;
 let recognition = null;
 let isListening = false;
+let userCoords = null;
 
 // ═══ 초기화 ═══
 document.addEventListener('DOMContentLoaded', () => {
   loadData();
+  initGeolocation();
   initSearch();
   initVoice();
   initCSVUpload();
@@ -261,13 +263,68 @@ function findNearbyFarms(farm, radiusKm) {
     .sort((a, b) => a.distance - b.distance);
 }
 
-// ═══ 카카오맵 내비 ═══
+// ═══ 위치 정보 (GPS) ═══
+function initGeolocation() {
+  if ('geolocation' in navigator) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        userCoords = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude
+        };
+      },
+      (err) => {
+        console.warn('GPS 위치 정보 획득 실패 (권한 필요):', err.message);
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  }
+}
+
+// ═══ 카카오맵 내비 (현재위치 → 농장) ═══
 function openKakaoNavi(farm) {
-  const name = encodeURIComponent(farm.사업장명);
-  const lat = farm.위도;
-  const lng = farm.경도;
-  const url = `https://map.kakao.com/link/to/${name},${lat},${lng}`;
-  window.open(url, '_blank');
+  const destName = encodeURIComponent(farm.사업장명);
+  const destLat = farm.위도;
+  const destLng = farm.경도;
+
+  // 이미 현재 위치(GPS)를 확보한 경우 바로 출발지 포함 길찾기 링크 열기
+  if (userCoords && userCoords.lat && userCoords.lng) {
+    const startName = encodeURIComponent('현재위치');
+    const url = `https://map.kakao.com/link/from/${startName},${userCoords.lat},${userCoords.lng}/to/${destName},${destLat},${destLng}`;
+    window.open(url, '_blank');
+    return;
+  }
+
+  // 아직 위치 정보가 없는 경우: 즉시 위치 권한 요청 후 길찾기 이동
+  if ('geolocation' in navigator) {
+    // 팝업 차단 회피를 위해 미리 새 창을 엶
+    const newTab = window.open('', '_blank');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        userCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const startName = encodeURIComponent('현재위치');
+        const url = `https://map.kakao.com/link/from/${startName},${pos.coords.latitude},${pos.coords.longitude}/to/${destName},${destLat},${destLng}`;
+        if (newTab) {
+          newTab.location.href = url;
+        } else {
+          window.open(url, '_blank');
+        }
+      },
+      () => {
+        // 위치 권한 미허용 또는 오류 시 기존 목적지 전용 링크로 이동
+        const fallbackUrl = `https://map.kakao.com/link/to/${destName},${destLat},${destLng}`;
+        if (newTab) {
+          newTab.location.href = fallbackUrl;
+        } else {
+          window.open(fallbackUrl, '_blank');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 4000, maximumAge: 60000 }
+    );
+  } else {
+    const url = `https://map.kakao.com/link/to/${destName},${destLat},${destLng}`;
+    window.open(url, '_blank');
+  }
 }
 
 // ═══ 음성 검색 (Web Speech API) ═══
