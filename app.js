@@ -893,11 +893,15 @@ function renderSearchList() {
   }).join('');
 }
 
-// 목록에서 농가 터치 시 지도 탭으로 전환 후 농가 선택
+// 목록에서 농가 터치 시 지도 탭으로 전환 후 농가 위치로 이동 (상세 바텀시트 미표시)
 function onFarmListItemClick(id) {
+  closeBottomSheet();
   switchTab('map');
   setTimeout(() => {
-    selectFarmOnMap(id);
+    const farm = farms.find(f => f._id === id);
+    if (farm) {
+      goToFarmOnMap(farm);
+    }
   }, 100);
 }
 window.onFarmListItemClick = onFarmListItemClick;
