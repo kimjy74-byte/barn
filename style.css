@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   축산길잡이 — 농가 이력 수첩 스타일시트
+   축산길잡이 — 농가 이력 수첩 & 지도 스타일시트
    ═══════════════════════════════════════════ */
 
 /* ─── 기본 변수 ─── */
@@ -20,14 +20,25 @@
   --border: #D5CEBC;
   --border-light: #E0D9C9;
   --shadow-sm: 0 1px 2px rgba(38,35,32,0.06);
-  --radius: 4px;
-  --radius-lg: 8px;
+  --shadow-md: 0 4px 12px rgba(38,35,32,0.12);
+  --shadow-lg: 0 8px 24px rgba(38,35,32,0.16);
+  --radius: 6px;
+  --radius-lg: 12px;
   --tab-height: 56px;
   --header-height: 52px;
   --search-bar-height: 56px;
   --font-serif: 'Noto Serif KR', serif;
   --font-sans: 'Noto Sans KR', sans-serif;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* 축종별 색상 팔레트 */
+  --color-hanwoo: #E65100;    /* 한우: 짙은 주황 */
+  --color-dairy: #0288D1;     /* 젖소: 밝은 파랑 */
+  --color-broiler: #F57F17;   /* 육계: 황금 노랑 */
+  --color-pig: #D81B60;       /* 돼지: 핑크 */
+  --color-beef: #00897B;      /* 육우: 딥 청록 */
+  --color-layer: #FB8C00;     /* 종계/산란계: 오렌지 */
+  --color-etc: #7B1FA2;       /* 기타: 퍼플 */
 }
 
 /* ─── 리셋 ─── */
@@ -73,13 +84,19 @@ body {
   position: relative;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
-  padding: 10px 16px;
-  text-align: center;
+  padding: 8px 16px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  height: var(--header-height);
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: baseline;
   gap: 8px;
-  z-index: 10;
 }
 
 .app-title {
@@ -96,7 +113,420 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* ═══ 검색 바 ═══ */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-icon-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-light);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.header-icon-btn:hover,
+.header-icon-btn:active {
+  background: var(--bg-elevated);
+  color: var(--ink);
+}
+
+.header-icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ═══ 탭 패널 공통 ═══ */
+.tab-panel {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  padding-bottom: calc(var(--tab-height) + var(--safe-bottom));
+}
+
+.tab-panel.active {
+  display: flex;
+}
+
+/* ═══ 1. 카카오 지도 탭 (#tab-map) ═══ */
+#tab-map {
+  padding-bottom: calc(var(--tab-height) + var(--safe-bottom));
+  height: calc(100dvh - var(--header-height));
+  position: relative;
+  overflow: hidden;
+}
+
+.map-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #E8E5DC;
+}
+
+/* 지도 상단 플로팅 컨트롤 */
+.map-floating-top {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.map-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(213, 206, 188, 0.85);
+  border-radius: var(--radius-lg);
+  padding: 4px 8px;
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+}
+
+.map-search-bar .search-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  height: 38px;
+  padding: 0 4px;
+}
+
+.map-search-bar input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--ink);
+  padding: 0 6px;
+}
+
+.map-search-bar input::placeholder {
+  color: var(--ink-muted);
+}
+
+/* 축종별 필터 칩 바 (가로 스크롤) */
+.breed-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 2px 2px 4px 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  pointer-events: auto;
+}
+
+.breed-filter-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  color: var(--ink-light);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.filter-chip:hover {
+  background: #fff;
+  border-color: var(--ink-muted);
+  color: var(--ink);
+}
+
+.filter-chip.active {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+  box-shadow: var(--shadow-md);
+}
+
+.filter-chip.active .chip-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.chip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chip-dot.all { background: var(--green); }
+.chip-dot.breed-hanwoo { background: var(--color-hanwoo); }
+.chip-dot.breed-dairy { background: var(--color-dairy); }
+.chip-dot.breed-broiler { background: var(--color-broiler); }
+.chip-dot.breed-pig { background: var(--color-pig); }
+.chip-dot.breed-beef { background: var(--color-beef); }
+.chip-dot.breed-layer { background: var(--color-layer); }
+.chip-dot.breed-etc { background: var(--color-etc); }
+
+.chip-count {
+  font-size: 0.6875rem;
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+/* 지도 우측 플로팅 액션 버튼들 */
+.map-floating-actions {
+  position: absolute;
+  right: 14px;
+  bottom: calc(var(--tab-height) + var(--safe-bottom) + 20px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-action-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.map-action-btn:hover,
+.map-action-btn:active {
+  background: var(--bg-elevated);
+  transform: scale(1.05);
+}
+
+.map-action-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* 축종 색상 범례 카드 */
+.map-legend {
+  position: absolute;
+  left: 14px;
+  bottom: calc(var(--tab-height) + var(--safe-bottom) + 20px);
+  z-index: 40;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px 14px;
+  box-shadow: var(--shadow-md);
+  display: none;
+  max-width: 220px;
+}
+
+.map-legend.show {
+  display: block;
+}
+
+.legend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.legend-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.legend-close {
+  background: none;
+  border: none;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.legend-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--ink-light);
+}
+
+/* 지도 상태 안내 배너 */
+.map-status-banner {
+  position: absolute;
+  top: 112px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  background: rgba(38, 35, 32, 0.85);
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  backdrop-filter: blur(4px);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* 지도 키 안내 오버레이 */
+.map-prompt-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  background: rgba(243, 239, 228, 0.94);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.map-prompt-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 20px;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+  max-width: 320px;
+  width: 100%;
+}
+
+.prompt-icon {
+  font-size: 2.25rem;
+  margin-bottom: 12px;
+}
+
+.map-prompt-card h3 {
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+
+.map-prompt-card p {
+  font-size: 0.875rem;
+  color: var(--ink-light);
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+
+.prompt-guide-text {
+  margin-top: 12px;
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.prompt-guide-text a {
+  color: var(--green);
+  text-decoration: underline;
+}
+
+/* ═══ 카카오 커스텀 오버레이 마커 스타일 ═══ */
+.farm-overlay {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px 3px 4px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  user-select: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, z-index 0.12s;
+}
+
+.farm-overlay:hover,
+.farm-overlay:active {
+  transform: translate(-50%, -50%) scale(1.12);
+  z-index: 1000 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  background: #ffffff;
+}
+
+.farm-overlay.selected {
+  transform: translate(-50%, -50%) scale(1.2);
+  z-index: 1100 !important;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(38, 35, 32, 0.25), 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+.farm-overlay-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.farm-overlay-name {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ═══ 2. 검색 목록 탭 ═══ */
 .search-bar {
   position: sticky;
   top: 0;
@@ -152,20 +582,18 @@ body {
   background: none;
   border: none;
   color: var(--ink-muted);
-  font-size: 1rem;
+  font-size: 0.875rem;
   cursor: pointer;
-  padding: 2px 4px;
-  line-height: 1;
+  padding: 4px;
 }
 
-/* ─── 마이크 버튼 ─── */
 .btn-mic {
   width: 40px;
   height: 40px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: #fff;
-  color: var(--ink-muted);
+  color: var(--ink);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -179,71 +607,41 @@ body {
   height: 20px;
 }
 
-.btn-mic:active {
-  background: var(--bg-elevated);
-}
-
 .btn-mic.listening {
-  border-color: var(--red);
+  background: var(--red-bg);
   color: var(--red);
-  animation: mic-pulse 1s ease-in-out infinite;
+  border-color: var(--red);
+  animation: pulse 1.2s infinite;
 }
 
-@keyframes mic-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(160,64,64,0.2); }
-  50% { box-shadow: 0 0 0 6px rgba(160,64,64,0); }
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
 }
 
-/* ─── 검색 상태 ─── */
 .search-status {
   padding: 8px 16px;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--ink-muted);
-  background: var(--bg);
-  border-bottom: 1px solid var(--border-light);
-  min-height: 28px;
-  display: flex;
-  align-items: center;
 }
 
-/* ═══ 탭 패널 ═══ */
-.tab-panel {
-  display: none;
-  flex: 1;
-  padding-bottom: calc(var(--tab-height) + var(--safe-bottom) + 8px);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.tab-panel.active {
-  display: flex;
-  flex-direction: column;
-}
-
-/* ═══ 농가 목록 ═══ */
 .farm-list {
   list-style: none;
-  flex: 1;
+  padding: 0 16px;
 }
 
 .farm-item {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   border-bottom: 1px solid var(--border-light);
-  cursor: pointer;
+  padding: 12px 0;
   transition: background 0.1s;
-}
-
-.farm-item:active {
-  background: var(--bg-elevated);
 }
 
 .farm-item-main {
   flex: 1;
-  padding: 12px 0 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  cursor: pointer;
   min-width: 0;
 }
 
@@ -251,68 +649,64 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 2px;
 }
 
 .breed-tag {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-  background: var(--amber-bg);
-  color: var(--amber);
-  font-family: var(--font-serif);
-  font-size: 0.75rem;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--green-bg);
+  color: var(--green);
+  font-size: 0.6875rem;
   font-weight: 700;
   flex-shrink: 0;
-  line-height: 1;
 }
 
 .farm-name {
   font-family: var(--font-serif);
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .farm-address {
+  display: block;
   font-size: 0.8125rem;
   color: var(--ink-light);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-bottom: 2px;
 }
 
 .farm-meta {
+  display: block;
   font-size: 0.75rem;
   color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 .farm-item-info {
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--border-light);
   color: var(--ink-muted);
-  font-size: 1.125rem;
   cursor: pointer;
-  transition: color 0.1s;
+  font-size: 1.125rem;
+  border-radius: var(--radius);
+  flex-shrink: 0;
 }
 
-.farm-item-info:hover,
-.farm-item-info:active {
-  color: var(--green);
-  background: var(--green-bg);
+.farm-item-info:hover {
+  background: var(--bg-elevated);
+  color: var(--ink);
 }
 
-/* ═══ 빈 상태 ═══ */
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -320,31 +714,31 @@ body {
   justify-content: center;
   padding: 48px 16px;
   text-align: center;
-  gap: 8px;
 }
 
 .empty-icon {
   font-size: 2rem;
-  opacity: 0.5;
+  margin-bottom: 8px;
 }
 
 .empty-text {
-  font-size: 0.9375rem;
-  color: var(--ink-light);
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  margin-bottom: 12px;
 }
 
 .btn-link {
   background: none;
   border: none;
   color: var(--green);
-  font-size: 0.875rem;
   font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 500;
   cursor: pointer;
   text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
-/* ═══ 등록 화면 ═══ */
+/* ═══ 3. 등록 탭 ═══ */
 .register-section {
   padding: 16px;
 }
@@ -353,26 +747,24 @@ body {
   font-family: var(--font-serif);
   font-size: 1rem;
   font-weight: 600;
-  color: var(--ink);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .section-desc {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--ink-muted);
   margin-bottom: 12px;
 }
 
 .section-divider {
   border: none;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-light);
   margin: 0;
 }
 
-/* ─── CSV 업로드 ─── */
 .csv-upload-area {
   display: flex;
   flex-direction: column;
@@ -384,10 +776,10 @@ body {
   border-radius: var(--radius-lg);
   background: #fff;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  text-align: center;
   font-size: 0.8125rem;
   color: var(--ink-light);
-  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .csv-upload-area:hover,
@@ -402,7 +794,6 @@ body {
   color: var(--ink-muted);
 }
 
-/* ─── 폼 ─── */
 .farm-form {
   display: flex;
   flex-direction: column;
@@ -413,12 +804,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  flex: 1;
 }
 
 .form-row-double {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  display: flex;
+  gap: 8px;
 }
 
 .form-label {
@@ -428,7 +819,7 @@ body {
 }
 
 .form-label.required::after {
-  content: " *";
+  content: ' *';
   color: var(--red);
 }
 
@@ -442,7 +833,6 @@ body {
   background: #fff;
   outline: none;
   transition: border-color 0.15s;
-  width: 100%;
 }
 
 .form-input:focus {
@@ -613,7 +1003,7 @@ body {
 .bottomsheet-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(38,35,32,0.35);
+  background: rgba(38, 35, 32, 0.4);
   z-index: 300;
   opacity: 0;
   pointer-events: none;
@@ -632,14 +1022,15 @@ body {
   transform: translate(-50%, 100%);
   width: 100%;
   max-width: 480px;
-  max-height: 80dvh;
+  max-height: 82dvh;
   background: var(--bg);
   border-top: 1px solid var(--border);
-  border-radius: 12px 12px 0 0;
+  border-radius: 14px 14px 0 0;
   z-index: 301;
   display: flex;
   flex-direction: column;
   transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: var(--shadow-lg);
 }
 
 .bottomsheet.open {
@@ -654,7 +1045,7 @@ body {
 }
 
 .bottomsheet-handle span {
-  width: 32px;
+  width: 36px;
   height: 4px;
   border-radius: 2px;
   background: var(--border);
@@ -670,7 +1061,7 @@ body {
 /* ─── 바텀시트 내부 요소 ─── */
 .bs-farm-name {
   font-family: var(--font-serif);
-  font-size: 1.125rem;
+  font-size: 1.1875rem;
   font-weight: 700;
   margin-bottom: 12px;
   display: flex;
@@ -700,7 +1091,7 @@ body {
   background: var(--green-bg);
   border-left: 3px solid var(--green);
   padding: 10px 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   font-size: 0.8125rem;
   color: var(--ink);
   line-height: 1.6;
@@ -710,39 +1101,41 @@ body {
 .bs-actions {
   display: flex;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .bs-btn {
   flex: 1;
-  padding: 10px 12px;
+  padding: 11px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: #fff;
   font-family: var(--font-sans);
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: 0.84rem;
+  font-weight: 600;
   color: var(--ink);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: background 0.1s;
+  transition: all 0.12s;
 }
 
 .bs-btn:active {
   background: var(--bg-elevated);
 }
 
-.bs-btn-nav {
-  background: var(--green);
-  color: #fff;
-  border-color: var(--green);
+/* 카카오내비 길안내 버튼: 카카오 노란색 브랜드 컬러 테마 */
+.bs-btn-navi {
+  background: #FEE500;
+  color: #191919;
+  border-color: #E6CE00;
+  box-shadow: var(--shadow-sm);
 }
 
-.bs-btn-nav:active {
-  background: var(--green-light);
+.bs-btn-navi:active {
+  background: #FADA0A;
 }
 
 .bs-nearby-title {
@@ -764,6 +1157,11 @@ body {
   border-bottom: 1px solid var(--border-light);
   gap: 8px;
   font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.bs-nearby-item:hover {
+  background: var(--bg-elevated);
 }
 
 .bs-nearby-item:last-child {
@@ -823,7 +1221,7 @@ body {
 .confirm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(38,35,32,0.4);
+  background: rgba(38, 35, 32, 0.4);
   z-index: 500;
   display: flex;
   align-items: center;
@@ -858,6 +1256,75 @@ body {
   min-width: 64px;
 }
 
+/* ═══ 카카오 API 키 모달 ═══ */
+.key-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(38, 35, 32, 0.4);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.key-modal-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+}
+
+.key-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.key-modal-header h3 {
+  font-family: var(--font-serif);
+  font-size: 1.0625rem;
+  color: var(--ink);
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  font-size: 1.125rem;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.key-modal-desc {
+  font-size: 0.8125rem;
+  color: var(--ink-light);
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.key-help-note {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  line-height: 1.4;
+  margin-top: 10px;
+  margin-bottom: 16px;
+}
+
+.key-help-note a {
+  color: var(--green);
+  text-decoration: underline;
+}
+
+.key-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 /* ═══ 반응형 ═══ */
 @media (max-width: 480px) {
   #app {
@@ -873,5 +1340,3 @@ body {
     max-width: calc(100% - 32px);
   }
 }
-
-/* ═══ 다크모드 없음 (수첩 느낌 유지) ═══ */

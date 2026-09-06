@@ -3,25 +3,148 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="description" content="축산 농가 검색 및 카카오맵 내비게이션 안내 모바일 웹앱">
-  <title>축산길잡이 — 농가 검색 · 길안내</title>
+  <meta name="description" content="카카오 지도 기반 축산 농가 위치 탐색 및 카카오내비 길안내 모바일 웹앱">
+  <title>축산길잡이 — 카카오 지도 · 카카오내비</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@600;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="style.css">
+  <!-- Kakao JavaScript SDK (카카오내비 연동 지원) -->
+  <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js"></script>
 </head>
 <body>
   <div id="app">
     <!-- ═══ 헤더 ═══ -->
     <header id="header">
-      <h1 class="app-title">축산길잡이</h1>
-      <p class="app-subtitle">농가 검색 · 길안내</p>
+      <div class="header-left">
+        <h1 class="app-title">축산길잡이</h1>
+        <p class="app-subtitle">지도 · 카카오내비</p>
+      </div>
+      <div class="header-right">
+        <button id="btn-key-settings" class="header-icon-btn" onclick="openKeyModal()" title="카카오 API 키 설정">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </div>
     </header>
 
-    <!-- ═══ 검색 탭 ═══ -->
-    <section id="tab-search" class="tab-panel active">
+    <!-- ═══ 1. 카카오 지도 탭 (기본 첫 화면) ═══ -->
+    <section id="tab-map" class="tab-panel active">
+      <!-- 지도 위 플로팅 컨트롤 영역 -->
+      <div class="map-floating-top">
+        <!-- 지도 검색 바 -->
+        <div class="map-search-bar">
+          <div class="search-input-wrap">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/>
+            </svg>
+            <input type="text" id="map-search-input" placeholder="농가명으로 검색 (예: 새말, 하이얀)" autocomplete="off">
+            <button id="map-search-clear" class="search-clear" aria-label="검색어 지우기" style="display:none;">✕</button>
+          </div>
+          <button id="map-btn-mic" class="btn-mic" aria-label="음성 검색" title="음성으로 검색">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
+              <path d="M19 11a7 7 0 0 1-14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- 축종별 필터 칩 바 (가로 스크롤) -->
+        <div class="breed-filter-bar" id="breed-filter-bar">
+          <button class="filter-chip active" data-breed="ALL" onclick="setBreedFilter('ALL')">
+            <span class="chip-dot all"></span>전체 <span class="chip-count" id="chip-count-all">0</span>
+          </button>
+          <button class="filter-chip" data-breed="한우" onclick="setBreedFilter('한우')">
+            <span class="chip-dot breed-hanwoo"></span>한우 <span class="chip-count" id="chip-count-hanwoo">0</span>
+          </button>
+          <button class="filter-chip" data-breed="젖소" onclick="setBreedFilter('젖소')">
+            <span class="chip-dot breed-dairy"></span>젖소 <span class="chip-count" id="chip-count-dairy">0</span>
+          </button>
+          <button class="filter-chip" data-breed="육계" onclick="setBreedFilter('육계')">
+            <span class="chip-dot breed-broiler"></span>육계 <span class="chip-count" id="chip-count-broiler">0</span>
+          </button>
+          <button class="filter-chip" data-breed="돼지" onclick="setBreedFilter('돼지')">
+            <span class="chip-dot breed-pig"></span>돼지 <span class="chip-count" id="chip-count-pig">0</span>
+          </button>
+          <button class="filter-chip" data-breed="육우" onclick="setBreedFilter('육우')">
+            <span class="chip-dot breed-beef"></span>육우 <span class="chip-count" id="chip-count-beef">0</span>
+          </button>
+          <button class="filter-chip" data-breed="종계/산란계" onclick="setBreedFilter('종계/산란계')">
+            <span class="chip-dot breed-layer"></span>산란/종계 <span class="chip-count" id="chip-count-layer">0</span>
+          </button>
+          <button class="filter-chip" data-breed="기타" onclick="setBreedFilter('기타')">
+            <span class="chip-dot breed-etc"></span>기타 <span class="chip-count" id="chip-count-etc">0</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 지도 뷰 컨테이너 -->
+      <div id="kakao-map" class="map-container"></div>
+
+      <!-- 지도 우측 플로팅 액션 버튼들 -->
+      <div class="map-floating-actions">
+        <button id="btn-my-location" class="map-action-btn" onclick="moveToMyLocation()" title="내 위치">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+          </svg>
+        </button>
+        <button id="btn-fit-bounds" class="map-action-btn" onclick="fitAllMarkers()" title="전체 농가 보기">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+          </svg>
+        </button>
+        <button id="btn-toggle-legend" class="map-action-btn" onclick="toggleLegend()" title="축종 범례">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/>
+            <line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- 축종 색상 범례 팝업/카드 -->
+      <div id="map-legend" class="map-legend">
+        <div class="legend-header">
+          <span class="legend-title">축종별 색상 안내</span>
+          <button class="legend-close" onclick="toggleLegend(false)">✕</button>
+        </div>
+        <div class="legend-items">
+          <div class="legend-item"><span class="chip-dot breed-hanwoo"></span>한우</div>
+          <div class="legend-item"><span class="chip-dot breed-dairy"></span>젖소</div>
+          <div class="legend-item"><span class="chip-dot breed-broiler"></span>육계 (닭)</div>
+          <div class="legend-item"><span class="chip-dot breed-pig"></span>돼지 (양돈)</div>
+          <div class="legend-item"><span class="chip-dot breed-beef"></span>육우</div>
+          <div class="legend-item"><span class="chip-dot breed-layer"></span>종계 / 산란계</div>
+          <div class="legend-item"><span class="chip-dot breed-etc"></span>기타 (염소/사슴 등)</div>
+        </div>
+      </div>
+
+      <!-- 지도 안내/상태 배너 -->
+      <div id="map-status-banner" class="map-status-banner" style="display:none;"></div>
+
+      <!-- 지도 로딩 또는 카카오 키 필요 오버레이 -->
+      <div id="map-key-prompt" class="map-prompt-overlay" style="display:none;">
+        <div class="map-prompt-card">
+          <div class="prompt-icon">🗺️</div>
+          <h3>카카오 지도 API 키 안내</h3>
+          <p>카카오 지도를 화면에 표시하려면<br><strong>카카오 JavaScript 키</strong>가 필요합니다.</p>
+          <div class="prompt-actions">
+            <button class="btn-primary" onclick="openKeyModal()">카카오 API 키 입력하기</button>
+          </div>
+          <p class="prompt-guide-text">
+            <a href="https://developers.kakao.com" target="_blank" rel="noopener">카카오 디벨로퍼스</a>에서 무료로 키 발급 가능
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 2. 목록 탭 (기존 검색 목록) ═══ -->
+    <section id="tab-search" class="tab-panel">
       <!-- 검색 바 -->
       <div class="search-bar">
         <div class="search-input-wrap">
@@ -61,7 +184,7 @@
       </div>
     </section>
 
-    <!-- ═══ 등록 탭 ═══ -->
+    <!-- ═══ 3. 등록 탭 ═══ -->
     <section id="tab-register" class="tab-panel">
       <!-- CSV 업로드 -->
       <div class="register-section">
@@ -119,7 +242,7 @@
           <div class="form-row-double">
             <div class="form-row">
               <label class="form-label" for="f-type">주사육업종</label>
-              <input type="text" id="f-type" class="form-input" placeholder="예: 젖소, 육계">
+              <input type="text" id="f-type" class="form-input" placeholder="예: 젖소, 육계, 한우">
             </div>
             <div class="form-row">
               <label class="form-label" for="f-count">사육두수</label>
@@ -165,11 +288,24 @@
 
     <!-- ═══ 하단 탭바 ═══ -->
     <nav id="tab-bar" class="tab-bar">
-      <button class="tab-item active" data-tab="search" onclick="switchTab('search')">
+      <button class="tab-item active" data-tab="map" onclick="switchTab('map')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/>
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+          <line x1="8" y1="2" x2="8" y2="18"></line>
+          <line x1="16" y1="6" x2="16" y2="22"></line>
         </svg>
-        <span>검색</span>
+        <span>지도</span>
+      </button>
+      <button class="tab-item" data-tab="search" onclick="switchTab('search')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="8" y1="6" x2="21" y2="6"></line>
+          <line x1="8" y1="12" x2="21" y2="12"></line>
+          <line x1="8" y1="18" x2="21" y2="18"></line>
+          <line x1="3" y1="6" x2="3.01" y2="6"></line>
+          <line x1="3" y1="12" x2="3.01" y2="12"></line>
+          <line x1="3" y1="18" x2="3.01" y2="18"></line>
+        </svg>
+        <span>목록</span>
       </button>
       <button class="tab-item" data-tab="register" onclick="switchTab('register')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -199,6 +335,31 @@
         <div class="confirm-actions">
           <button id="confirm-cancel" class="btn-secondary">취소</button>
           <button id="confirm-ok" class="btn-primary btn-danger">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 카카오 API 키 설정 모달 ═══ -->
+    <div id="key-modal-overlay" class="key-modal-overlay" style="display:none;" onclick="closeKeyModal(event)">
+      <div class="key-modal-card" onclick="event.stopPropagation()">
+        <div class="key-modal-header">
+          <h3>카카오 API 설정</h3>
+          <button class="modal-close-btn" onclick="closeKeyModal()">✕</button>
+        </div>
+        <p class="key-modal-desc">
+          카카오 지도 표시 및 카카오내비 연동을 위해 <strong>카카오 개발자 JavaScript 키</strong>를 등록해 주세요.
+        </p>
+        <div class="form-row">
+          <label class="form-label" for="kakao-key-input">JavaScript 키</label>
+          <input type="text" id="kakao-key-input" class="form-input" placeholder="카카오 자바스크립트 키 입력">
+        </div>
+        <p class="key-help-note">
+          * 키는 브라우저 로컬 저장소(localStorage)에 안전하게 보관됩니다.<br>
+          * 발급: <a href="https://developers.kakao.com" target="_blank" rel="noopener">developers.kakao.com</a> &gt; 내 애플리케이션 &gt; 앱 키 &gt; JavaScript 키
+        </p>
+        <div class="key-modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeKeyModal()">닫기</button>
+          <button type="button" class="btn-primary" onclick="saveKakaoKey()">저장 및 적용</button>
         </div>
       </div>
     </div>

@@ -1,9 +1,9 @@
 /* ═══════════════════════════════════════════
    축산길잡이 — 메인 애플리케이션 로직
+   (카카오 지도 & 축종별 색상 점 & 카카오내비 연동)
    ═══════════════════════════════════════════ */
 
 // ─── 초기 시드 데이터 ───
-// data.js(전체 552개 농가)가 로드되어 있으면 기본 데이터로 사용
 const DEFAULT_FARMS = (typeof SEED_FARMS_DATA !== 'undefined' && Array.isArray(SEED_FARMS_DATA) && SEED_FARMS_DATA.length > 0)
   ? SEED_FARMS_DATA
   : [
@@ -25,31 +25,487 @@ const DEFAULT_FARMS = (typeof SEED_FARMS_DATA !== 'undefined' && Array.isArray(S
 ];
 
 const STORAGE_KEY = 'chuksan_farms_v2';
+const KAKAO_KEY_STORAGE = 'chuksan_kakao_js_key';
+
 const CSV_COLUMNS = [
   '사업장명', '축산인허가번호', '소재지도로', '소재지지번주소',
   '위도', '경도', '면적', '주사육업종', '사육두수',
   '허가일자', '관리기관명', '관리부서전화번호', '데이터기준일자'
 ];
 
+// ─── 축종별 색상 매핑 ───
+const BREED_COLORS = {
+  한우: '#E65100',       // 짙은 주황
+  젖소: '#0288D1',       // 파랑
+  육계: '#F57F17',       // 노랑
+  돼지: '#D81B60',       // 핑크/로즈
+  육우: '#00897B',       // 청록
+  '종계/산란계': '#FB8C00', // 오렌지
+  기타: '#7B1FA2'        // 퍼플
+};
+
 // ─── 상태 ───
 let farms = [];
-let currentTab = 'search';
+let currentTab = 'map';  // 기본 첫 화면: 카카오 지도
 let toastTimer = null;
 let recognition = null;
 let isListening = false;
 let userCoords = null;
 
+// 카카오 지도 관련 상태
+let kakaoMap = null;
+let kakaoOverlays = [];
+let currentBreedFilter = 'ALL';
+let currentSearchQuery = '';
+let selectedFarmId = null;
+let myLocationMarker = null;
+
 // ═══ 초기화 ═══
 document.addEventListener('DOMContentLoaded', () => {
   loadData();
   initGeolocation();
-  initSearch();
+  initKakaoSDK();
+  initMapSearch();
+  initListSearch();
   initVoice();
   initCSVUpload();
   initForm();
+  updateBreedChipCounts();
   renderSearchList();
   renderManageList();
 });
+
+// ═══ 카카오 SDK & 지도 로드 ═══
+function getStoredKakaoKey() {
+  return localStorage.getItem(KAKAO_KEY_STORAGE) || '';
+}
+
+function initKakaoSDK() {
+  const userKey = getStoredKakaoKey();
+  
+  if (userKey) {
+    loadKakaoMapSdk(userKey);
+  } else {
+    // 키가 없으면 키 안내 오버레이 표시
+    const keyPrompt = document.getElementById('map-key-prompt');
+    if (keyPrompt) keyPrompt.style.display = 'flex';
+  }
+}
+
+function loadKakaoMapSdk(appKey) {
+  // 이미 카카오 맵 SDK가 로드되어 있으면 바로 초기화
+  if (window.kakao && window.kakao.maps) {
+    kakao.maps.load(() => {
+      initMap();
+    });
+    initKakaoNaviSDK(appKey);
+    return;
+  }
+
+  // 기존 스크립트가 있다면 제거 후 다시 로드
+  const oldScript = document.getElementById('kakao-maps-sdk');
+  if (oldScript) oldScript.remove();
+
+  const script = document.createElement('script');
+  script.id = 'kakao-maps-sdk';
+  script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&libraries=services,clusterer&autoload=false`;
+  
+  script.onload = () => {
+    if (window.kakao && window.kakao.maps) {
+      kakao.maps.load(() => {
+        const keyPrompt = document.getElementById('map-key-prompt');
+        if (keyPrompt) keyPrompt.style.display = 'none';
+        initMap();
+      });
+      initKakaoNaviSDK(appKey);
+    }
+  };
+
+  script.onerror = () => {
+    showToast('카카오 지도 SDK 로드 실패. API 키 또는 도메인 설정을 확인해 주세요.', 4000);
+    const keyPrompt = document.getElementById('map-key-prompt');
+    if (keyPrompt) keyPrompt.style.display = 'flex';
+  };
+
+  document.head.appendChild(script);
+}
+
+function initKakaoNaviSDK(appKey) {
+  if (window.Kakao) {
+    try {
+      if (!Kakao.isInitialized()) {
+        Kakao.init(appKey);
+      }
+    } catch (err) {
+      console.warn('Kakao Navi SDK 초기화 경고:', err);
+    }
+  }
+}
+
+// ═══ 카카오 API 키 모달 제어 ═══
+function openKeyModal() {
+  const currentKey = getStoredKakaoKey();
+  const input = document.getElementById('kakao-key-input');
+  if (input) input.value = currentKey;
+  const modal = document.getElementById('key-modal-overlay');
+  if (modal) modal.style.display = 'flex';
+}
+window.openKeyModal = openKeyModal;
+
+function closeKeyModal(event) {
+  if (event && event.target && event.target.id !== 'key-modal-overlay') return;
+  const modal = document.getElementById('key-modal-overlay');
+  if (modal) modal.style.display = 'none';
+}
+window.closeKeyModal = closeKeyModal;
+
+function saveKakaoKey() {
+  const input = document.getElementById('kakao-key-input');
+  const key = input ? input.value.trim() : '';
+
+  if (!key) {
+    showToast('카카오 JavaScript 키를 입력해 주세요.', 2500);
+    return;
+  }
+
+  localStorage.setItem(KAKAO_KEY_STORAGE, key);
+  showToast('카카오 API 키가 저장되었습니다. 지도를 불러옵니다.', 2000);
+  closeKeyModal();
+
+  loadKakaoMapSdk(key);
+}
+window.saveKakaoKey = saveKakaoKey;
+
+// ═══ 카카오 지도 초기화 ═══
+function initMap() {
+  const container = document.getElementById('kakao-map');
+  if (!container || !window.kakao || !kakao.maps) return;
+
+  // 파주시 중심 기본 좌표
+  const defaultCenter = new kakao.maps.LatLng(37.84, 126.82);
+  const options = {
+    center: defaultCenter,
+    level: 9 // 파주시 전체가 잘 보이는 축척
+  };
+
+  kakaoMap = new kakao.maps.Map(container, options);
+
+  // 일반 지도와 스카이뷰 컨트롤 추가 (선택사항)
+  const mapTypeControl = new kakao.maps.MapTypeControl();
+  kakaoMap.addControl(mapTypeControl, kakao.maps.ControlPosition.TOPRIGHT);
+
+  // 지도 빈 곳 클릭 시 선택 해제
+  kakao.maps.event.addListener(kakaoMap, 'click', () => {
+    clearMarkerSelection();
+  });
+
+  // 농가 커스텀 오버레이 마커 렌더링
+  renderMapMarkers();
+}
+
+// ─── 축종 분류 및 색상 함수 ───
+function getBreedCategory(breed) {
+  if (!breed) return '기타';
+  const b = breed.trim();
+  if (b.includes('한우')) return '한우';
+  if (b.includes('젖소')) return '젖소';
+  if (b.includes('육우')) return '육우';
+  if (b.includes('육계') || b.includes('닭')) return '육계';
+  if (b.includes('종계') || b.includes('산란계')) return '종계/산란계';
+  if (b.includes('돼지') || b.includes('양돈')) return '돼지';
+  return '기타';
+}
+
+function getBreedColor(breed) {
+  const category = getBreedCategory(breed);
+  return BREED_COLORS[category] || BREED_COLORS['기타'];
+}
+
+// ─── 지도 커스텀 오버레이 마커 렌더링 ───
+function renderMapMarkers() {
+  if (!kakaoMap || !window.kakao || !kakao.maps) return;
+
+  // 기존 오버레이 모두 제거
+  kakaoOverlays.forEach(item => {
+    if (item.overlay) item.overlay.setMap(null);
+  });
+  kakaoOverlays = [];
+
+  const validFarms = getFilteredFarmsForMap();
+  const bounds = new kakao.maps.LatLngBounds();
+  let hasValidCoords = false;
+
+  validFarms.forEach(farm => {
+    const lat = parseFloat(farm.위도);
+    const lng = parseFloat(farm.경도);
+    if (isNaN(lat) || isNaN(lng)) return;
+
+    const latLng = new kakao.maps.LatLng(lat, lng);
+    bounds.extend(latLng);
+    hasValidCoords = true;
+
+    const breed = farm.주사육업종 || '기타';
+    const color = getBreedColor(breed);
+
+    // 커스텀 오버레이 DOM 생성: 동그라미 색상 점 + 농가명 텍스트
+    const content = document.createElement('div');
+    content.className = 'farm-overlay';
+    content.id = `farm-overlay-${farm._id}`;
+    content.title = `${farm.사업장명} (${breed})`;
+
+    if (selectedFarmId === farm._id) {
+      content.classList.add('selected');
+    }
+
+    content.innerHTML = `
+      <span class="farm-overlay-dot" style="background:${color};"></span>
+      <span class="farm-overlay-name">${escapeHtml(farm.사업장명)}</span>
+    `;
+
+    // 점 클릭 시 농가 선택 및 정보 출력
+    content.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectFarmOnMap(farm._id);
+    });
+
+    const overlay = new kakao.maps.CustomOverlay({
+      position: latLng,
+      content: content,
+      clickable: true,
+      zIndex: 10
+    });
+
+    overlay.setMap(kakaoMap);
+    kakaoOverlays.push({ id: farm._id, overlay: overlay, latLng: latLng, farm: farm });
+  });
+
+  // 상태 배너 업데이트
+  updateMapStatusBanner(validFarms.length);
+
+  // 검색어가 있거나 특정 필터일 때 바운드 자동 맞춤
+  if ((currentSearchQuery || currentBreedFilter !== 'ALL') && hasValidCoords && validFarms.length > 0) {
+    kakaoMap.setBounds(bounds);
+  }
+}
+
+function clearMarkerSelection() {
+  selectedFarmId = null;
+  document.querySelectorAll('.farm-overlay.selected').forEach(el => el.classList.remove('selected'));
+}
+
+// ─── 지도에서 농가 선택 (클릭) ───
+function selectFarmOnMap(farmId) {
+  clearMarkerSelection();
+  selectedFarmId = farmId;
+
+  const farm = farms.find(f => f._id === farmId);
+  if (!farm) return;
+
+  const targetOverlayEl = document.getElementById(`farm-overlay-${farmId}`);
+  if (targetOverlayEl) {
+    targetOverlayEl.classList.add('selected');
+  }
+
+  // 해당 농가 위치로 부드럽게 지도 중심 이동
+  if (kakaoMap && farm.위도 && farm.경도) {
+    const pos = new kakao.maps.LatLng(parseFloat(farm.위도), parseFloat(farm.경도));
+    kakaoMap.panTo(pos);
+  }
+
+  // 농가 상세 정보 바텀시트 오픈
+  openBottomSheet(farmId);
+}
+window.selectFarmOnMap = selectFarmOnMap;
+
+// ─── 필터링 로직 (지도용) ───
+function getFilteredFarmsForMap() {
+  return farms.filter(f => {
+    // 유효한 좌표 확인
+    if (!f.위도 || !f.경도 || isNaN(parseFloat(f.위도)) || isNaN(parseFloat(f.경도))) {
+      return false;
+    }
+    // 검색어 필터
+    if (currentSearchQuery) {
+      const q = currentSearchQuery.toLowerCase();
+      const matchName = f.사업장명 && f.사업장명.toLowerCase().includes(q);
+      const matchAddr = (f.소재지도로 && f.소재지도로.toLowerCase().includes(q)) || (f.소재지지번주소 && f.소재지지번주소.toLowerCase().includes(q));
+      if (!matchName && !matchAddr) return false;
+    }
+    // 축종 필터
+    if (currentBreedFilter !== 'ALL') {
+      const cat = getBreedCategory(f.주사육업종);
+      if (cat !== currentBreedFilter) return false;
+    }
+    return true;
+  });
+}
+
+function setBreedFilter(breed) {
+  currentBreedFilter = breed;
+
+  // 칩 활성화 상태 갱신
+  document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.breed === breed);
+  });
+
+  renderMapMarkers();
+}
+window.setBreedFilter = setBreedFilter;
+
+function updateBreedChipCounts() {
+  const counts = {
+    ALL: 0,
+    한우: 0,
+    젖소: 0,
+    육계: 0,
+    돼지: 0,
+    육우: 0,
+    '종계/산란계': 0,
+    기타: 0
+  };
+
+  farms.forEach(f => {
+    if (!f.위도 || !f.경도 || isNaN(parseFloat(f.위도)) || isNaN(parseFloat(f.경도))) return;
+    counts.ALL++;
+    const cat = getBreedCategory(f.주사육업종);
+    if (counts[cat] !== undefined) counts[cat]++;
+    else counts.기타++;
+  });
+
+  const setEl = (id, count) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = count;
+  };
+
+  setEl('chip-count-all', counts.ALL);
+  setEl('chip-count-hanwoo', counts.한우);
+  setEl('chip-count-dairy', counts.젖소);
+  setEl('chip-count-broiler', counts.육계);
+  setEl('chip-count-pig', counts.돼지);
+  setEl('chip-count-beef', counts.육우);
+  setEl('chip-count-layer', counts['종계/산란계']);
+  setEl('chip-count-etc', counts.기타);
+}
+
+function updateMapStatusBanner(count) {
+  const banner = document.getElementById('map-status-banner');
+  if (!banner) return;
+
+  if (currentSearchQuery || currentBreedFilter !== 'ALL') {
+    let text = '';
+    if (currentSearchQuery && currentBreedFilter !== 'ALL') {
+      text = `[${currentBreedFilter}] "${currentSearchQuery}" 검색 결과 ${count}곳`;
+    } else if (currentSearchQuery) {
+      text = `"${currentSearchQuery}" 검색 결과 ${count}곳`;
+    } else {
+      text = `${currentBreedFilter} 축산 농가 ${count}곳 표시`;
+    }
+    banner.textContent = text;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+// ─── 지도 버튼 기능들 ───
+function fitAllMarkers() {
+  if (!kakaoMap || !window.kakao || !kakao.maps) return;
+  const validFarms = getFilteredFarmsForMap();
+  if (validFarms.length === 0) {
+    showToast('표시할 농가가 없습니다.', 2000);
+    return;
+  }
+
+  const bounds = new kakao.maps.LatLngBounds();
+  validFarms.forEach(f => {
+    bounds.extend(new kakao.maps.LatLng(parseFloat(f.위도), parseFloat(f.경도)));
+  });
+  kakaoMap.setBounds(bounds);
+}
+window.fitAllMarkers = fitAllMarkers;
+
+function moveToMyLocation() {
+  if (!('geolocation' in navigator)) {
+    showToast('GPS 위치 기능을 지원하지 않는 기기입니다.', 2500);
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      userCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      if (!kakaoMap || !window.kakao || !kakao.maps) return;
+
+      const userLatLng = new kakao.maps.LatLng(userCoords.lat, userCoords.lng);
+      kakaoMap.setCenter(userLatLng);
+      kakaoMap.setLevel(5);
+
+      // 내 위치 마커 표시
+      if (myLocationMarker) {
+        myLocationMarker.setMap(null);
+      }
+
+      const myMarkerContent = document.createElement('div');
+      myMarkerContent.style.cssText = `
+        width: 18px;
+        height: 18px;
+        background: #2563EB;
+        border: 3px solid #FFFFFF;
+        border-radius: 50%;
+        box-shadow: 0 0 8px rgba(37,99,235,0.8);
+      `;
+
+      myLocationMarker = new kakao.maps.CustomOverlay({
+        position: userLatLng,
+        content: myMarkerContent,
+        zIndex: 50
+      });
+      myLocationMarker.setMap(kakaoMap);
+
+      showToast('현재 내 위치로 이동했습니다.', 2000);
+    },
+    (err) => {
+      showToast('위치 정보를 가져올 수 없습니다. 브라우저 위치 권한을 확인해 주세요.', 3000);
+    },
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+}
+window.moveToMyLocation = moveToMyLocation;
+
+function toggleLegend(forceState) {
+  const legend = document.getElementById('map-legend');
+  if (!legend) return;
+  if (forceState !== undefined) {
+    legend.classList.toggle('show', !!forceState);
+  } else {
+    legend.classList.toggle('show');
+  }
+}
+window.toggleLegend = toggleLegend;
+
+// ─── 지도 상단 검색바 제어 ───
+function initMapSearch() {
+  const input = document.getElementById('map-search-input');
+  const clearBtn = document.getElementById('map-search-clear');
+  if (!input || !clearBtn) return;
+
+  let debounceTimer = null;
+  input.addEventListener('input', () => {
+    clearBtn.style.display = input.value ? 'block' : 'none';
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      currentSearchQuery = input.value.trim();
+      renderMapMarkers();
+    }, 200);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    clearBtn.style.display = 'none';
+    currentSearchQuery = '';
+    renderMapMarkers();
+    input.focus();
+  });
+}
 
 // ─── 데이터 관리 ═══
 function loadData() {
@@ -57,7 +513,6 @@ function loadData() {
   if (stored) {
     try {
       farms = JSON.parse(stored);
-      // 기존에 4개짜리 옛날 데이터가 캐싱되어 있다면 전체 552개 데이터로 자동 교체
       if (!Array.isArray(farms) || farms.length < 50) {
         farms = [...DEFAULT_FARMS];
         saveData();
@@ -95,21 +550,33 @@ function ensureIds() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById(`tab-${tab}`).classList.add('active');
+  const target = document.getElementById(`tab-${tab}`);
+  if (target) target.classList.add('active');
+
   document.querySelectorAll('.tab-item').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
-  if (tab === 'register') {
+
+  if (tab === 'map') {
+    // 지도가 가려져 있다가 나타날 때 relayout 필수
+    setTimeout(() => {
+      if (kakaoMap && window.kakao && kakao.maps) {
+        kakaoMap.relayout();
+      }
+    }, 50);
+  } else if (tab === 'search') {
+    renderSearchList();
+  } else if (tab === 'register') {
     renderManageList();
   }
 }
-// 전역에서 접근 가능하도록
 window.switchTab = switchTab;
 
-// ═══ 검색 ═══
-function initSearch() {
+// ═══ 목록 탭 검색 ═══
+function initListSearch() {
   const input = document.getElementById('search-input');
   const clearBtn = document.getElementById('search-clear');
+  if (!input || !clearBtn) return;
 
   input.addEventListener('input', () => {
     clearBtn.style.display = input.value ? 'block' : 'none';
@@ -124,7 +591,7 @@ function initSearch() {
   });
 }
 
-function getFilteredFarms() {
+function getFilteredFarmsForList() {
   const query = document.getElementById('search-input').value.trim().toLowerCase();
   const validFarms = farms.filter(f => f.위도 && f.경도 && !isNaN(parseFloat(f.위도)) && !isNaN(parseFloat(f.경도)));
 
@@ -138,8 +605,9 @@ function renderSearchList() {
   const emptySearch = document.getElementById('empty-search');
   const noData = document.getElementById('no-data');
   const status = document.getElementById('search-status');
-  const query = document.getElementById('search-input').value.trim();
+  if (!list || !status) return;
 
+  const query = document.getElementById('search-input').value.trim();
   const validFarms = farms.filter(f => f.위도 && f.경도 && !isNaN(parseFloat(f.위도)) && !isNaN(parseFloat(f.경도)));
 
   if (validFarms.length === 0 && !query) {
@@ -151,7 +619,7 @@ function renderSearchList() {
   }
 
   noData.style.display = 'none';
-  const filtered = getFilteredFarms();
+  const filtered = getFilteredFarmsForList();
 
   if (filtered.length === 0) {
     list.innerHTML = '';
@@ -168,15 +636,16 @@ function renderSearchList() {
   list.innerHTML = filtered.map(farm => {
     const breed = farm.주사육업종 || '기타';
     const tag = breed.charAt(0);
+    const color = getBreedColor(breed);
     const addr = farm.소재지도로 || farm.소재지지번주소 || '주소 없음';
     const count = farm.사육두수 ? Number(farm.사육두수).toLocaleString() : '-';
     const unit = getUnit(breed);
 
     return `
       <li class="farm-item">
-        <div class="farm-item-main" onclick="onFarmClick('${farm._id}')">
+        <div class="farm-item-main" onclick="onFarmListItemClick('${farm._id}')">
           <div class="farm-item-top">
-            <span class="breed-tag">${escapeHtml(tag)}</span>
+            <span class="breed-tag" style="background:${color}20; color:${color}; border:1px solid ${color}40;">${escapeHtml(tag)}</span>
             <span class="farm-name">${escapeHtml(farm.사업장명)}</span>
           </div>
           <span class="farm-address">${escapeHtml(addr)}</span>
@@ -189,18 +658,16 @@ function renderSearchList() {
   }).join('');
 }
 
-// ═══ 농장 클릭 → TTS + 내비게이션 ═══
-function onFarmClick(id) {
-  const farm = farms.find(f => f._id === id);
-  if (!farm) return;
-
-  const msg = buildAnnouncementText(farm);
-  showToast(msg, 6000);
-  speakText(msg);
-  openKakaoNavi(farm);
+// 목록에서 농가 터치 시 지도 탭으로 전환 후 농가 선택
+function onFarmListItemClick(id) {
+  switchTab('map');
+  setTimeout(() => {
+    selectFarmOnMap(id);
+  }, 100);
 }
-window.onFarmClick = onFarmClick;
+window.onFarmListItemClick = onFarmListItemClick;
 
+// ═══ 농장 안내 음성 텍스트 생성 ═══
 function buildAnnouncementText(farm) {
   const name = farm.사업장명;
   const breed = farm.주사육업종 || '기타';
@@ -223,7 +690,7 @@ function buildAnnouncementText(farm) {
     nearbyText = `인근 1km 이내에는 ${nearby.length}개 농장이 있으며, 그중 가장 큰 농장은 ${lName} 농장이며 ${lBreed}을 ${lCount}${lUnit} 사육 중에 있습니다.`;
   }
 
-  return `요청하신 ${name} 농장으로 안내해 드리겠습니다. ${name} 농장은 축종은 ${breed}이며 ${count}${unit}를 사육 중에 있습니다. ${nearbyText}`;
+  return `요청하신 ${name} 농장으로 안내해 드리겠습니다. ${name} 농장의 축종은 ${breed}이며 ${count}${unit}를 사육 중에 있습니다. ${nearbyText}`;
 }
 
 function getUnit(breed) {
@@ -274,66 +741,73 @@ function initGeolocation() {
         };
       },
       (err) => {
-        console.warn('GPS 위치 정보 획득 실패 (권한 필요):', err.message);
+        console.warn('GPS 위치 정보 획득 실패:', err.message);
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
     );
   }
 }
 
-// ═══ 카카오맵 내비 (현재위치 → 농장) ═══
+// ═══ 핵심: 카카오내비 연동 (Kakao Navi) ═══
 function openKakaoNavi(farm) {
-  const destName = encodeURIComponent(farm.사업장명);
-  const destLat = farm.위도;
-  const destLng = farm.경도;
+  if (!farm) return;
+  const name = farm.사업장명;
+  const lat = parseFloat(farm.위도);
+  const lng = parseFloat(farm.경도);
 
-  // 이미 현재 위치(GPS)를 확보한 경우 바로 출발지 포함 길찾기 링크 열기
-  if (userCoords && userCoords.lat && userCoords.lng) {
-    const startName = encodeURIComponent('현재위치');
-    const url = `https://map.kakao.com/link/from/${startName},${userCoords.lat},${userCoords.lng}/to/${destName},${destLat},${destLng}`;
-    window.open(url, '_blank');
+  if (isNaN(lat) || isNaN(lng)) {
+    showToast('해당 농가의 위치 좌표가 없어 내비를 실행할 수 없습니다.', 3000);
     return;
   }
 
-  // 아직 위치 정보가 없는 경우: 즉시 위치 권한 요청 후 길찾기 이동
-  if ('geolocation' in navigator) {
-    // 팝업 차단 회피를 위해 미리 새 창을 엶
-    const newTab = window.open('', '_blank');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        userCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        const startName = encodeURIComponent('현재위치');
-        const url = `https://map.kakao.com/link/from/${startName},${pos.coords.latitude},${pos.coords.longitude}/to/${destName},${destLat},${destLng}`;
-        if (newTab) {
-          newTab.location.href = url;
-        } else {
-          window.open(url, '_blank');
-        }
-      },
-      () => {
-        // 위치 권한 미허용 또는 오류 시 기존 목적지 전용 링크로 이동
-        const fallbackUrl = `https://map.kakao.com/link/to/${destName},${destLat},${destLng}`;
-        if (newTab) {
-          newTab.location.href = fallbackUrl;
-        } else {
-          window.open(fallbackUrl, '_blank');
-        }
-      },
-      { enableHighAccuracy: true, timeout: 4000, maximumAge: 60000 }
-    );
+  showToast(`카카오내비로 ${name} 길안내를 실행합니다.`, 3000);
+
+  // 1. Kakao Javascript SDK의 공식 Kakao.Navi.start 기능 우선 시도
+  if (window.Kakao && typeof Kakao.isInitialized === 'function' && Kakao.isInitialized() && Kakao.Navi) {
+    try {
+      Kakao.Navi.start({
+        name: name,
+        x: lng,
+        y: lat,
+        coordType: 'wgs84'
+      });
+      return;
+    } catch (e) {
+      console.warn('Kakao.Navi.start 실행 예외, URL 스킴으로 대체:', e);
+    }
+  }
+
+  // 2. 모바일 기기: 카카오내비 URL 스킴 (딥링크) 직접 호출
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const naviAppScheme = `kakaonavi://navigate?name=${encodeURIComponent(name)}&x=${lng}&y=${lat}&coord_type=wgs84`;
+  const webNaviUrl = `https://map.kakao.com/link/to/${encodeURIComponent(name)},${lat},${lng}`;
+
+  if (isMobile) {
+    const clickTime = Date.now();
+    window.location.href = naviAppScheme;
+
+    // 카카오내비 앱 미설치 시 1.5초 후 카카오맵 길찾기 웹 페이지로 안내
+    setTimeout(() => {
+      if (Date.now() - clickTime < 2000) {
+        window.open(webNaviUrl, '_blank');
+      }
+    }, 1500);
   } else {
-    const url = `https://map.kakao.com/link/to/${destName},${destLat},${destLng}`;
-    window.open(url, '_blank');
+    // PC 브라우저 환경에서는 카카오맵 길찾기 웹 페이지 열기
+    window.open(webNaviUrl, '_blank');
   }
 }
+window.openKakaoNavi = openKakaoNavi;
 
 // ═══ 음성 검색 (Web Speech API) ═══
 function initVoice() {
-  const btnMic = document.getElementById('btn-mic');
+  const mapBtnMic = document.getElementById('map-btn-mic');
+  const listBtnMic = document.getElementById('btn-mic');
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
   if (!SpeechRecognition) {
-    btnMic.style.display = 'none';
+    if (mapBtnMic) mapBtnMic.style.display = 'none';
+    if (listBtnMic) listBtnMic.style.display = 'none';
     return;
   }
 
@@ -344,39 +818,55 @@ function initVoice() {
 
   recognition.addEventListener('result', (e) => {
     const transcript = e.results[0][0].transcript;
-    const input = document.getElementById('search-input');
-    input.value = transcript;
-    document.getElementById('search-clear').style.display = 'block';
-    renderSearchList();
+    if (currentTab === 'map') {
+      const mapInput = document.getElementById('map-search-input');
+      if (mapInput) {
+        mapInput.value = transcript;
+        document.getElementById('map-search-clear').style.display = 'block';
+        currentSearchQuery = transcript.trim();
+        renderMapMarkers();
+      }
+    } else {
+      const listInput = document.getElementById('search-input');
+      if (listInput) {
+        listInput.value = transcript;
+        document.getElementById('search-clear').style.display = 'block';
+        renderSearchList();
+      }
+    }
   });
 
-  recognition.addEventListener('end', () => {
+  const stopListeningUI = () => {
     isListening = false;
-    btnMic.classList.remove('listening');
-  });
+    if (mapBtnMic) mapBtnMic.classList.remove('listening');
+    if (listBtnMic) listBtnMic.classList.remove('listening');
+  };
 
+  recognition.addEventListener('end', stopListeningUI);
   recognition.addEventListener('error', (e) => {
-    isListening = false;
-    btnMic.classList.remove('listening');
+    stopListeningUI();
     if (e.error !== 'aborted' && e.error !== 'no-speech') {
       showToast('음성 인식 오류: ' + e.error, 3000);
     }
   });
 
-  btnMic.addEventListener('click', () => {
+  const handleMicClick = () => {
     if (isListening) {
       recognition.stop();
       return;
     }
     isListening = true;
-    btnMic.classList.add('listening');
+    if (mapBtnMic) mapBtnMic.classList.add('listening');
+    if (listBtnMic) listBtnMic.classList.add('listening');
     try {
       recognition.start();
     } catch {
-      isListening = false;
-      btnMic.classList.remove('listening');
+      stopListeningUI();
     }
-  });
+  };
+
+  if (mapBtnMic) mapBtnMic.addEventListener('click', handleMicClick);
+  if (listBtnMic) listBtnMic.addEventListener('click', handleMicClick);
 }
 
 // ═══ TTS (Web Speech Synthesis) ═══
@@ -388,6 +878,7 @@ function speakText(text) {
   utterance.rate = 1;
   window.speechSynthesis.speak(utterance);
 }
+window.speakText = speakText;
 
 // ═══ 바텀시트 ═══
 function openBottomSheet(id) {
@@ -396,6 +887,7 @@ function openBottomSheet(id) {
 
   const breed = farm.주사육업종 || '기타';
   const tag = breed.charAt(0);
+  const color = getBreedColor(breed);
   const count = farm.사육두수 ? Number(farm.사육두수).toLocaleString() : '-';
   const unit = getUnit(breed);
   const addr = farm.소재지도로 || farm.소재지지번주소 || '주소 없음';
@@ -410,9 +902,10 @@ function openBottomSheet(id) {
       const nBreed = n.farm.주사육업종 || '기타';
       const nCount = n.farm.사육두수 ? Number(n.farm.사육두수).toLocaleString() : '-';
       const nUnit = getUnit(nBreed);
+      const nColor = getBreedColor(nBreed);
       return `
-        <li class="bs-nearby-item">
-          <span class="breed-tag">${escapeHtml(nBreed.charAt(0))}</span>
+        <li class="bs-nearby-item" onclick="selectFarmOnMap('${n.farm._id}')">
+          <span class="breed-tag" style="background:${nColor}20; color:${nColor}; border:1px solid ${nColor}40;">${escapeHtml(nBreed.charAt(0))}</span>
           <span class="bs-nearby-name">${escapeHtml(n.farm.사업장명)}</span>
           <span class="bs-nearby-breed">${escapeHtml(nBreed)} ${nCount}${nUnit}</span>
           <span class="bs-nearby-dist">${n.distance.toFixed(2)}km</span>
@@ -423,12 +916,12 @@ function openBottomSheet(id) {
   const content = document.getElementById('bottomsheet-content');
   content.innerHTML = `
     <div class="bs-farm-name">
-      <span class="breed-tag">${escapeHtml(tag)}</span>
+      <span class="breed-tag" style="background:${color}20; color:${color}; border:1px solid ${color}40;">${escapeHtml(tag)}</span>
       ${escapeHtml(farm.사업장명)}
     </div>
     <div class="bs-info-grid">
       <span class="bs-info-label">주사육업종</span>
-      <span class="bs-info-value">${escapeHtml(breed)}</span>
+      <span class="bs-info-value" style="font-weight:600; color:${color};">${escapeHtml(breed)}</span>
       <span class="bs-info-label">사육두수</span>
       <span class="bs-info-value tabular-nums">${count}${unit}</span>
       <span class="bs-info-label">소재지</span>
@@ -436,7 +929,7 @@ function openBottomSheet(id) {
       ${farm.면적 ? `<span class="bs-info-label">면적</span><span class="bs-info-value tabular-nums">${Number(farm.면적).toLocaleString()}㎡</span>` : ''}
       ${farm.허가일자 ? `<span class="bs-info-label">허가일자</span><span class="bs-info-value">${escapeHtml(farm.허가일자)}</span>` : ''}
       ${farm.관리기관명 ? `<span class="bs-info-label">관리기관</span><span class="bs-info-value">${escapeHtml(farm.관리기관명)}</span>` : ''}
-      ${farm.관리부서전화번호 ? `<span class="bs-info-label">연락처</span><span class="bs-info-value"><a href="tel:${farm.관리부서전화번호}" style="color:var(--green)">${escapeHtml(farm.관리부서전화번호)}</a></span>` : ''}
+      ${farm.관리부서전화번호 ? `<span class="bs-info-label">연락처</span><span class="bs-info-value"><a href="tel:${farm.관리부서전화번호}" style="color:var(--green); font-weight:500;">${escapeHtml(farm.관리부서전화번호)}</a></span>` : ''}
       ${farm.축산인허가번호 ? `<span class="bs-info-label">인허가번호</span><span class="bs-info-value">${escapeHtml(farm.축산인허가번호)}</span>` : ''}
       ${farm.데이터기준일자 ? `<span class="bs-info-label">데이터기준일</span><span class="bs-info-value">${escapeHtml(farm.데이터기준일자)}</span>` : ''}
     </div>
@@ -447,8 +940,8 @@ function openBottomSheet(id) {
       <button class="bs-btn" onclick="speakText(document.querySelector('.bs-announce').textContent)">
         🔊 음성으로 듣기
       </button>
-      <button class="bs-btn bs-btn-nav" onclick="openKakaoNavi(farms.find(f=>f._id==='${farm._id}'))">
-        🗺️ 카카오맵 길안내
+      <button class="bs-btn bs-btn-navi" onclick="openKakaoNavi(farms.find(f=>f._id==='${farm._id}'))">
+        🚗 카카오내비 길안내
       </button>
     </div>
 
@@ -472,6 +965,7 @@ window.closeBottomSheet = closeBottomSheet;
 // ═══ 토스트 ═══
 function showToast(msg, duration = 4000) {
   const toast = document.getElementById('toast');
+  if (!toast) return;
   toast.textContent = msg;
   toast.classList.add('show');
   clearTimeout(toastTimer);
@@ -502,6 +996,7 @@ function showConfirm(msg) {
 function initCSVUpload() {
   const fileInput = document.getElementById('csv-file-input');
   const uploadArea = document.getElementById('csv-upload-area');
+  if (!fileInput || !uploadArea) return;
 
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -509,7 +1004,6 @@ function initCSVUpload() {
     fileInput.value = '';
   });
 
-  // 드래그 앤 드롭
   uploadArea.addEventListener('dragover', (e) => {
     e.preventDefault();
     uploadArea.classList.add('drag-over');
@@ -553,6 +1047,8 @@ async function handleCSVFile(file) {
 
   farms = parsed.map(f => ({ ...f, _id: generateId() }));
   saveData();
+  updateBreedChipCounts();
+  renderMapMarkers();
   renderSearchList();
   renderManageList();
   showToast(`${parsed.length}건의 농가 데이터가 등록되었습니다.`, 3000);
@@ -562,7 +1058,6 @@ function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return null;
 
-  // 헤더 파싱 및 유연한 컬럼 매핑 지원
   const headers = parseCSVLine(lines[0]);
   const colMap = {};
   
@@ -593,7 +1088,6 @@ function parseCSV(text) {
     }
   });
 
-  // 사업장명, 위도, 경도는 필수
   if (!('사업장명' in colMap)) {
     showToast('CSV 헤더에 "사업장명" 컬럼이 없습니다.', 3000);
     return null;
@@ -613,10 +1107,8 @@ function parseCSV(text) {
       }
     });
 
-    // 사업장명 필수
     if (!row.사업장명) continue;
 
-    // 숫자 변환
     if (row.위도) row.위도 = parseFloat(row.위도) || '';
     if (row.경도) row.경도 = parseFloat(row.경도) || '';
     if (row.면적) row.면적 = parseFloat(row.면적) || '';
@@ -664,6 +1156,7 @@ function parseCSVLine(line) {
 // ═══ 개별 등록/수정 폼 ═══
 function initForm() {
   const form = document.getElementById('farm-form');
+  if (!form) return;
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     saveFarmForm();
@@ -711,12 +1204,16 @@ function saveFarmForm() {
 
   saveData();
   resetForm();
+  updateBreedChipCounts();
+  renderMapMarkers();
   renderSearchList();
   renderManageList();
 }
 
 function resetForm() {
-  document.getElementById('farm-form').reset();
+  const form = document.getElementById('farm-form');
+  if (!form) return;
+  form.reset();
   document.getElementById('form-edit-id').value = '';
   document.getElementById('form-title').textContent = '개별 농가 등록';
   document.getElementById('form-submit-btn').textContent = '등록';
@@ -747,7 +1244,6 @@ function editFarm(id) {
   document.getElementById('form-submit-btn').textContent = '수정 저장';
   document.getElementById('form-cancel-btn').style.display = 'block';
 
-  // 폼으로 스크롤
   document.getElementById('form-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 window.editFarm = editFarm;
@@ -762,11 +1258,12 @@ async function deleteFarm(id) {
   farms = farms.filter(f => f._id !== id);
   saveData();
 
-  // 수정 중이던 농가면 폼 초기화
   if (document.getElementById('form-edit-id').value === id) {
     resetForm();
   }
 
+  updateBreedChipCounts();
+  renderMapMarkers();
   renderSearchList();
   renderManageList();
   showToast(`${farm.사업장명}이(가) 삭제되었습니다.`, 2000);
@@ -779,6 +1276,7 @@ function renderManageList() {
   const list = document.getElementById('manage-list');
   const empty = document.getElementById('manage-empty');
   const countBadge = document.getElementById('manage-count');
+  if (!list || !empty || !countBadge) return;
 
   countBadge.textContent = farms.length;
 
@@ -793,11 +1291,12 @@ function renderManageList() {
     const breed = farm.주사육업종 || '기타';
     const count = farm.사육두수 ? Number(farm.사육두수).toLocaleString() : '-';
     const unit = getUnit(breed);
+    const color = getBreedColor(breed);
     const hasCoords = farm.위도 && farm.경도;
 
     return `
       <li class="manage-item">
-        <span class="breed-tag">${escapeHtml(breed.charAt(0))}</span>
+        <span class="breed-tag" style="background:${color}20; color:${color}; border:1px solid ${color}40;">${escapeHtml(breed.charAt(0))}</span>
         <div class="manage-item-info">
           <div class="manage-item-name">${escapeHtml(farm.사업장명)}${hasCoords ? '' : ' <span style="color:var(--red);font-size:0.7rem;">⚠ 좌표없음</span>'}</div>
           <div class="manage-item-sub">${escapeHtml(breed)} · ${count}${unit}</div>
