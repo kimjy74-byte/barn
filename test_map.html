@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>카카오 지도 테스트</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: sans-serif; }
+    #map { width: 100%; height: 100vh; }
+    #status {
+      position: fixed; top: 10px; left: 10px; z-index: 9999;
+      background: rgba(0,0,0,0.8); color: #0f0; padding: 12px 16px;
+      border-radius: 8px; font-size: 13px; max-width: 90%;
+      white-space: pre-wrap; font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="status">지도 로딩 중...</div>
+
+  <script>
+    var statusEl = document.getElementById('status');
+    function log(msg) {
+      statusEl.textContent += '\n' + msg;
+      console.log(msg);
+    }
+
+    // 1. localStorage에서 키 읽기
+    var key = localStorage.getItem('chuksan_kakao_js_key');
+    if (!key) {
+      key = prompt('카카오 JavaScript 키를 입력하세요:');
+      if (key) localStorage.setItem('chuksan_kakao_js_key', key);
+    }
+    log('키: ' + (key ? key.substring(0, 8) + '...' : '없음'));
+    log('접속주소: ' + location.origin);
+
+    if (key) {
+      // 2. 카카오 Maps SDK 동적 로드 (autoload=false)
+      var s = document.createElement('script');
+      s.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' + key + '&autoload=false';
+      s.onload = function() {
+        log('SDK 스크립트 로드 완료');
+        log('kakao: ' + typeof window.kakao);
+        log('kakao.maps: ' + typeof window.kakao?.maps);
+        
+        kakao.maps.load(function() {
+          log('kakao.maps.load() 콜백 실행');
+          log('kakao.maps.Map: ' + typeof kakao.maps.Map);
+          
+          var container = document.getElementById('map');
+          log('컨테이너: ' + container.offsetWidth + 'x' + container.offsetHeight);
+          
+          try {
+            var map = new kakao.maps.Map(container, {
+              center: new kakao.maps.LatLng(37.5665, 126.9780), // 서울시청
+              level: 5
+            });
+            log('✅ 지도 객체 생성 성공');
+            
+            // 타일 로드 확인을 위해 3초 후 체크
+            setTimeout(function() {
+              var imgs = container.querySelectorAll('img');
+              var canvases = container.querySelectorAll('canvas');
+              log('img 태그: ' + imgs.length + '개');
+              log('canvas 태그: ' + canvases.length + '개');
+              log('자식 요소: ' + container.children.length + '개');
+              
+              if (imgs.length > 0) {
+                log('✅ 타일 이미지 로드됨!');
+                log('첫 번째 img src: ' + imgs[0].src.substring(0, 80) + '...');
+              } else if (canvases.length > 0) {
+                log('✅ Canvas 렌더링 확인');
+              } else {
+                log('❌ 타일/Canvas 없음 — 도메인 등록 확인 필요');
+                log('카카오 디벨로퍼스 > 앱 > 플랫폼 > Web에');
+                log(location.origin + ' 등록 필요');
+              }
+            }, 3000);
+          } catch(e) {
+            log('❌ 지도 생성 에러: ' + e.message);
+          }
+        });
+      };
+      s.onerror = function() {
+        log('❌ SDK 로드 실패! 키 또는 도메인 문제');
+      };
+      document.head.appendChild(s);
+    }
+  </script>
+</body>
+</html>

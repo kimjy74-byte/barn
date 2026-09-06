@@ -83,25 +83,18 @@ function getStoredKakaoKey() {
 function initKakaoSDK() {
   const userKey = getStoredKakaoKey();
   
-  if (userKey) {
-    loadKakaoMapSdk(userKey);
-  } else {
+  if (!userKey) {
     // 키가 없으면 키 안내 오버레이 표시
     const keyPrompt = document.getElementById('map-key-prompt');
     if (keyPrompt) keyPrompt.style.display = 'flex';
-  }
-}
-
-function loadKakaoMapSdk(appKey) {
-  // 이미 카카오 맵 SDK가 로드되어 있으면 바로 초기화
-  if (window.kakao && window.kakao.maps) {
-    kakao.maps.load(() => {
-      initMap();
-    });
-    initKakaoNaviSDK(appKey);
     return;
   }
 
+  // autoload=false + kakao.maps.load() 방식 동적 로드
+  loadKakaoMapSdkFallback(userKey);
+}
+
+function loadKakaoMapSdkFallback(appKey) {
   // 기존 스크립트가 있다면 제거 후 다시 로드
   const oldScript = document.getElementById('kakao-maps-sdk');
   if (oldScript) oldScript.remove();
@@ -113,6 +106,7 @@ function loadKakaoMapSdk(appKey) {
   script.onload = () => {
     if (window.kakao && window.kakao.maps) {
       kakao.maps.load(() => {
+        console.log('[축산길잡이] 카카오 Maps SDK 동적 로드 완료 — 지도 초기화');
         const keyPrompt = document.getElementById('map-key-prompt');
         if (keyPrompt) keyPrompt.style.display = 'none';
         initMap();
@@ -132,24 +126,6 @@ function loadKakaoMapSdk(appKey) {
     const keyPrompt = document.getElementById('map-key-prompt');
     if (keyPrompt) {
       keyPrompt.style.display = 'flex';
-      const promptCard = keyPrompt.querySelector('.map-prompt-card');
-      if (promptCard) {
-        promptCard.innerHTML = `
-          <div class="prompt-icon">⚠️</div>
-          <h3>카카오 지도 연동 확인 필요</h3>
-          <div style="text-align:left; font-size:0.8125rem; color:var(--ink-light); line-height:1.6; margin-bottom:16px;">
-            ${window.location.protocol === 'file:' ? '<p style="color:var(--red); font-weight:600; margin-bottom:8px;">⚠️ 현재 file:// 로 실행 중입니다.<br>카카오는 보안상 file://을 차단하므로 Live Server(http://localhost:5500 등)로 열어야 합니다.</p>' : ''}
-            <p><strong>1. JavaScript 키가 맞는지 확인</strong><br>REST API 키가 아닌 <strong>JavaScript 키</strong>여야 합니다.</p>
-            <p style="margin-top:6px;"><strong>2. Web 사이트 도메인 등록 확인</strong><br>카카오 디벨로퍼스 &gt; 앱 &gt; [플랫폼] &gt; [Web]에 <strong>${window.location.origin}</strong>을 등록해 주세요.</p>
-          </div>
-          <div class="prompt-actions">
-            <button class="btn-primary" onclick="openKeyModal()">키 다시 입력 / 설정</button>
-          </div>
-          <p class="prompt-guide-text" style="margin-top:10px;">
-            <a href="https://developers.kakao.com" target="_blank" rel="noopener">카카오 디벨로퍼스 바로가기</a>
-          </p>
-        `;
-      }
     }
   };
 
@@ -195,17 +171,23 @@ function saveKakaoKey() {
   }
 
   localStorage.setItem(KAKAO_KEY_STORAGE, key);
-  showToast('카카오 API 키가 저장되었습니다. 지도를 불러옵니다.', 2000);
+  showToast('카카오 API 키가 저장되었습니다. 페이지를 새로고침합니다.', 1500);
   closeKeyModal();
 
-  loadKakaoMapSdk(key);
+  // 동기 로딩을 위해 페이지 새로고침 (head의 인라인 스크립트가 키를 읽어 SDK를 로드)
+  setTimeout(() => location.reload(), 800);
 }
 window.saveKakaoKey = saveKakaoKey;
 
 // ═══ 카카오 지도 초기화 ═══
 function initMap() {
   const container = document.getElementById('kakao-map');
-  if (!container || !window.kakao || !kakao.maps) return;
+  if (!container || !window.kakao || !kakao.maps) {
+    console.error('[축산길잡이] initMap 중단 — container:', !!container, 'kakao:', !!window.kakao, 'maps:', !!(window.kakao && kakao.maps));
+    return;
+  }
+
+  console.log('[축산길잡이] initMap() 시작 — 컨테이너:', container.offsetWidth, 'x', container.offsetHeight);
 
   // 파주시 중심 기본 좌표
   const defaultCenter = new kakao.maps.LatLng(37.84, 126.82);
@@ -215,14 +197,21 @@ function initMap() {
   };
 
   kakaoMap = new kakao.maps.Map(container, options);
+  console.log('[축산길잡이] ✅ 카카오 지도 객체 생성 완료');
 
-  // 컨테이너 크기 반영을 위한 강제 리레이아웃
-  setTimeout(() => {
+  // 컨테이너 크기 반영을 위한 단계적 리레이아웃
+  const relayoutMap = () => {
     if (kakaoMap) {
       kakaoMap.relayout();
       kakaoMap.setCenter(defaultCenter);
+      console.log('[축산길잡이] relayout 실행 — 컨테이너:', container.offsetWidth, 'x', container.offsetHeight);
     }
-  }, 100);
+  };
+  
+  // 다단계 relayout으로 CSS 렌더링 안정화 보장
+  setTimeout(relayoutMap, 100);
+  setTimeout(relayoutMap, 500);
+  setTimeout(relayoutMap, 1500);
 
   // 일반 지도와 스카이뷰 컨트롤 추가 (선택사항)
   const mapTypeControl = new kakao.maps.MapTypeControl();
@@ -235,6 +224,13 @@ function initMap() {
 
   // 농가 커스텀 오버레이 마커 렌더링
   renderMapMarkers();
+
+  // 3초 후 타일 로드 상태 체크
+  setTimeout(() => {
+    const imgs = container.querySelectorAll('img');
+    const canvases = container.querySelectorAll('canvas');
+    console.log('[축산길잡이] 타일 체크 — img:', imgs.length, 'canvas:', canvases.length, 'children:', container.children.length);
+  }, 3000);
 }
 
 // ─── 축종 분류 및 색상 함수 ───
